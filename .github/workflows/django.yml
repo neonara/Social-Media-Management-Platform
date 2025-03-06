@@ -1,0 +1,85 @@
+name: CI/CD Pipeline for Django and Vite.js
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Python for Django
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.x'
+
+      # Step 3: Install Django backend dependencies
+      - name: Install backend dependencies (Django)
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Step 4: Run Django tests
+      - name: Run Django tests
+        run: |
+          cd backend
+          python manage.py test
+
+      # Step 5: Set up Node.js for Vite.js frontend
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '16'
+
+      # Step 6: Install Vite.js frontend dependencies
+      - name: Install frontend dependencies (Vite.js)
+        run: |
+          cd frontend
+          npm install
+
+      # Step 7: Build frontend (Vite.js)
+      - name: Build frontend (Vite.js)
+        run: |
+          cd frontend
+          npm run build
+
+      # Step 8: Optional - Deploy backend to Heroku or AWS (example)
+      # You can use Heroku for backend deployment as shown below (optional step)
+      # If you have AWS, adjust the steps accordingly.
+
+      - name: Deploy backend to Heroku (optional)
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}  # Make sure this secret is configured in GitHub Secrets
+        run: |
+          git remote add heroku https://git.heroku.com/your-app.git
+          git push heroku main
+
+      # Optional: Deploy frontend to a CDN (AWS S3, Netlify, etc.)
+      - name: Deploy Vite.js frontend to S3 (example, replace with your deploy method)
+        run: |
+          cd frontend
+          aws s3 sync dist/ s3://your-bucket-name/ --delete
+
+  # Optional: Deploy frontend to a CDN (e.g., AWS S3 or Netlify)
+  deploy-frontend:
+    runs-on: ubuntu-latest
+    needs: build-and-test  # This ensures it runs after the build-and-test job
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Deploy Vite.js frontend to S3 (example)
+        run: |
+          cd frontend
+          aws s3 sync dist/ s3://your-bucket-name/ --delete
