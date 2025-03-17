@@ -1,4 +1,4 @@
-name: CI/CD Pipeline  Next.js
+name: CI/CD Pipeline Next.js
 
 on:
   push:
@@ -13,23 +13,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-     
-      # Step 5: Set up Node.js for Next.js
+      # Step 1: Checkout the code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Node.js for Next.js
       - name: Set up Node.js
         uses: actions/setup-node@v2
         with:
           node-version: '16'
 
-      # Step 6: Install Next.js frontend dependencies
+      # Step 3: Install Next.js frontend dependencies
       - name: Install frontend dependencies (Next.js)
         run: |
-          cd ../frontend
+          cd ../../frontend
           npm install
 
-      # Step 7: Build frontend (Next.js)
+      # Step 4: Build frontend (Next.js)
       - name: Build frontend (Next.js)
         run: |
-          cd frontend
+          cd ../../frontend
           npm run build
-          
- 
