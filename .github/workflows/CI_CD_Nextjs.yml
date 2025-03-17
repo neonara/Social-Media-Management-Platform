@@ -26,11 +26,11 @@ jobs:
       # Step 3: Install Next.js frontend dependencies
       - name: Install frontend dependencies (Next.js)
         run: |
-          cd ../../frontend
+          cd ./frontend
           npm install
 
       # Step 4: Build frontend (Next.js)
       - name: Build frontend (Next.js)
         run: |
-          cd ../../frontend
+          cd ./frontend
           npm run build
