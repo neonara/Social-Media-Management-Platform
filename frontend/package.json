@@ -9,9 +9,9 @@
     "lint": "next lint"
   },
   "packageManager": "npm@10.9.2",
-  "overrides":{
-    "react": "$react",
-    "react-dom": "$react_dom"
+  "overrides": {
+    "react": "react",
+    "react-dom": "react-dom"
   },
   "dependencies": {
     "react": "^19.0.0",
