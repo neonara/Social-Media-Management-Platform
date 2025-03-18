@@ -6,6 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
 from .serializers import LogoutUserSerializer
 from .serializers import SetNewPasswordSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
 
 class UserLoginView(APIView):
     permission_classes = [AllowAny]  
@@ -21,17 +22,23 @@ class UserLoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class LogoutUserView(APIView):
-    permission_classes = [IsAuthenticated]
+    #permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        serializer = LogoutUserSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            response = Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
-            response.delete_cookie("access_token")  
-            response.delete_cookie("refresh_token")
-            return response
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        refresh_token = request.COOKIES.get('refresh_token')  # Read from cookies
+        if not refresh_token:
+            return Response({"error": "No refresh token found"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            token = RefreshToken(refresh_token)
+            token.blacklist()  # Blacklist token
+        except Exception:
+            return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        response = Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
+        response.delete_cookie("access_token")  # Delete cookies
+        response.delete_cookie("refresh_token")
+        return response
     
 class PasswordResetRequestView(APIView):
     def post(self, request):
