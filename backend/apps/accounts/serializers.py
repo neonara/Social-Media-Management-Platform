@@ -4,8 +4,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.exceptions import AuthenticationFailed
 from .models import User
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from django.urls import reverse
-from django.core.exceptions import ValidationError
 
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155, min_length=6)
@@ -127,3 +125,46 @@ class SetNewPasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError("Invalid user ID")
         except Exception as e:
             raise serializers.ValidationError("Invalid token or user ID")
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True)
+
+    def validate(self, data):
+        user = self.context['request'].user
+        if not user.check_password(data["old_password"]):
+            raise serializers.ValidationError({"old_password": "Incorrect password"})
+        return data
+    
+
+
+
+class AdminUserUpdateSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False)
+
+    class Meta:
+        model = User
+        fields = ['email', 'password', 'is_administrator', 'is_moderator', 'is_community_manager', 'is_client', 'is_verified']
+
+    def validate(self, data):
+        """Ensure only one role is set to True."""
+        roles = ['is_administrator', 'is_moderator', 'is_community_manager', 'is_client']
+        role_values = [data.get(role, False) for role in roles]
+
+        if sum(role_values) > 1:
+            raise serializers.ValidationError("A user can only have one role at a time.")
+        
+        return data
+
+    def update(self, instance, validated_data):
+        """Update user details, ensuring password is hashed if provided."""
+        password = validated_data.pop('password', None)
+
+        if password:
+            instance.set_password(password)
+
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+
+        instance.save()
+        return instance
