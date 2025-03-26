@@ -26,12 +26,12 @@ jobs:
       # Step 3: Install Django backend dependencies
       - name: Install backend dependencies (Django)
         run: |
-          cd ./backend
+        
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       # Step 4: Run Django tests
       - name: Run Django tests
         run: |
-          cd ./backend
+       
           python manage.py test
