@@ -6,3 +6,6 @@
 # production
 /build
 /backend/.vscode
+
+**/__pycache__/
+/backend/social_media_management/settings.py
