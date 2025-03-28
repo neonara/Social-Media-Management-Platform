@@ -32,13 +32,13 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'apps.accounts',         
-    'apps.content',           
-    'apps.planning',          
-    'apps.analytics',        
-    'apps.notifications',    
-    'apps.ai_integration',   
-    'apps.social_media',    
-    'apps.collaboration',
+    # 'apps.content',           
+    # 'apps.planning',          
+    # 'apps.analytics',        
+    # 'apps.notifications',    
+    # 'apps.ai_integration',   
+    # 'apps.social_media',    
+    # 'apps.collaboration',
     'rest_framework',
     'rest_framework_simplejwt',
     'django.contrib.admin',
@@ -57,6 +57,25 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+
+# CORS settings
+CORS_ALLOW_ALL_ORIGINS = True  # For development only
+CORS_ALLOW_CREDENTIALS = True
+
+# # In production, replace with specific origins:
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:3000",
+# ]
+
+# Allow all needed HTTP methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
 ]
 
 ROOT_URLCONF = 'social_media_management.urls'
@@ -88,7 +107,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'social_media_platform',  
         'USER': 'postgres',       
-        'PASSWORD': '123456',    
+        'PASSWORD': 'achref',    
         'HOST': 'localhost',           
         'PORT': '5432',           
     }
@@ -150,6 +169,16 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Email Configuration for Production
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# This will print emails to the console instead of sending them
+EMAIL_HOST = 'smtp.gmail.com'  # Or your email provider's SMTP server
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'achref.maarfi0@gmail.com'
+EMAIL_HOST_PASSWORD = 'gutz dviy kudt elao'  # Use an app password for Gmail
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 # Frontend URL for password reset
 FRONTEND_URL = 'http://localhost:3000'

@@ -4,7 +4,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.exceptions import AuthenticationFailed
 from .models import User
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
-from .utils import generate_password
+from .utils.password_utils import generate_password
 from django.core.mail import send_mail
 from django.conf import settings
 
@@ -58,28 +58,31 @@ class CreateUserSerializer(serializers.ModelSerializer):
         {reset_link}
         """
 
-        send_mail(
-            'Account Created - Social Media Management Platform',
-            email_body,
-            "achref.maarfi0@gmail.com",
-            [email],
-            fail_silently=False,
-        )
+        try:
+            send_mail(
+                'Account Created - Social Media Management Platform',
+                email_body,
+                "achref.maarfi0@gmail.com",
+                [email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            # In development, just log the error and continue
+            print(f"Email sending failed: {e}")
+            # If using development console backend, print the temp password so you can test
+            if hasattr(settings, 'DEBUG_EMAIL') and settings.DEBUG_EMAIL:
+                print(f"DEV CREDENTIALS - Email: {email}, Password: {password}")
 
         return user
 
 class FirstTimePasswordChangeSerializer(serializers.Serializer):
-    temp_password = serializers.CharField(required=True)
+    password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True, min_length=8)
-    confirm_password = serializers.CharField(required=True)
 
     def validate(self, data):
-        if data['new_password'] != data['confirm_password']:
-            raise serializers.ValidationError({"confirm_password": "Passwords don't match"})
-        
         user = self.context['request'].user
-        if not user.check_password(data["temp_password"]):
-            raise serializers.ValidationError({"temp_password": "Incorrect temporary password"})
+        if not user.check_password(data["password"]):
+            raise serializers.ValidationError({"password": "Incorrect temporary password"})
         
         return data
 

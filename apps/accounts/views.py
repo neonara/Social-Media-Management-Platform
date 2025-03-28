@@ -1,4 +1,5 @@
 from .models import User
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.mail import send_mail
 from django.utils.http import urlsafe_base64_encode
@@ -13,35 +14,106 @@ from rest_framework.generics import UpdateAPIView
 from .serializers import AdminUserUpdateSerializer, ChangePasswordSerializer, PasswordResetSerializer, SetNewPasswordSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
+class ListUsers(APIView):
+    permission_classes = [IsAdminUser]
+
+    def get(self, request):
+        users = User.objects.all()
+        user_data = [
+            {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "is_active": user.is_active,
+            "is_staff": user.is_staff,
+            "roles": [
+                role
+                for role, has_role in {
+                "administrator": user.is_administrator,
+                "moderator": user.is_moderator,
+                "community_manager": user.is_community_manager,
+                "client": user.is_client,
+                }.items()
+                if has_role
+            ],  # Dynamically include roles based on user attributes
+            }
+            for user in users
+        ]
+        return Response(user_data, status=status.HTTP_200_OK)
+
 class CreateUserView(APIView):
     permission_classes = [IsAdminUser]
 
     def post(self, request):
         serializer = CreateUserSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response(
-                {"message": "User created successfully. Credentials sent via email."},
-                status=status.HTTP_201_CREATED
-            )
+            user = serializer.save()
+            
+            # Get the password from context if available (we'll add this in the serializer)
+            temp_password = getattr(serializer, 'temp_password', None)
+            
+            response_data = {"message": "User created successfully"}
+            
+            # Include credentials in the API response for development
+            if settings.DEBUG:
+                response_data.update({
+                    "dev_info": {
+                        "message": "DEVELOPMENT ONLY - Credentials for testing",
+                        "email": user.email,
+                        "temp_password": temp_password,
+                        "reset_link": f"{settings.FRONTEND_URL}/first-reset-password?email={user.email}"
+                    }
+                })
+            
+            return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    
 class FirstTimePasswordChangeView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]  # Allow anyone to change first-time password
 
     def post(self, request):
-        serializer = FirstTimePasswordChangeSerializer(
-            data=request.data, 
-            context={'request': request}
-        )
+        serializer = FirstTimePasswordChangeSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save()
-            return Response(
-                {"message": "Password changed successfully"}, 
-                status=status.HTTP_200_OK
-            )
+            email = serializer.validated_data['email']
+            password = serializer.validated_data['password']
+            new_password = serializer.validated_data['new_password']
+            
+            try:
+                user = User.objects.get(email=email)
+                
+                # Print for debugging
+                print(f"Attempting password change for {email}")
+                print(f"Submitted temp password: {password}")
+                
+                # Check if the current password is correct
+                if not user.check_password(password):
+                    return Response(
+                        {"password": ["Incorrect temporary password"]},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                # Set and save the new password
+                user.set_password(new_password)
+                user.save()
+                
+                # Generate tokens for the user
+                refresh = RefreshToken.for_user(user)
+                
+                return Response({
+                    'message': 'Password changed successfully',
+                    'tokens': {
+                        'refresh': str(refresh),
+                        'access': str(refresh.access_token),
+                    }
+                }, status=status.HTTP_200_OK)
+                
+            except User.DoesNotExist:
+                return Response(
+                    {"email": ["User with this email does not exist"]},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+        
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 class UserLoginView(APIView):
     permission_classes = [AllowAny]  
 
