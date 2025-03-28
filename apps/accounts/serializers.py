@@ -4,6 +4,90 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.exceptions import AuthenticationFailed
 from .models import User
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
+from .utils import generate_password
+from django.core.mail import send_mail
+from django.conf import settings
+
+
+class CreateUserSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(max_length=155)
+    role = serializers.ChoiceField(choices=[
+        ('administrator', 'Administrator'),
+        ('moderator', 'Moderator'),
+        ('community_manager', 'Community Manager'),
+        ('client', 'Client')
+    ])
+
+    class Meta:
+        model = User
+        fields = ['email', 'role']
+
+    def create(self, validated_data):
+        email = validated_data['email']
+        role = validated_data.pop('role', 'client')  # Default to client if not specified
+        password = generate_password()
+        
+        user = User.objects.create_user(
+            email=email,
+            password=password,
+            is_active=True,
+            is_verified=True
+        )
+        
+        # Set the appropriate role based on the input
+        if role == 'administrator':
+            user.is_administrator = True
+        elif role == 'moderator':
+            user.is_moderator = True
+        elif role == 'community_manager':
+            user.is_community_manager = True
+        elif role == 'client':
+            user.is_client = True
+        
+        user.save()
+
+        reset_link = f"{settings.FRONTEND_URL}/first-reset-password?email={email}"
+        email_body = f"""
+        Your account has been created.
+        
+        Email: {email}
+        Temporary Password: {password}
+        Role: {role.replace('_', ' ').title()}
+        
+        Please change your password by visiting:
+        {reset_link}
+        """
+
+        send_mail(
+            'Account Created - Social Media Management Platform',
+            email_body,
+            "achref.maarfi0@gmail.com",
+            [email],
+            fail_silently=False,
+        )
+
+        return user
+
+class FirstTimePasswordChangeSerializer(serializers.Serializer):
+    temp_password = serializers.CharField(required=True)
+    new_password = serializers.CharField(required=True, min_length=8)
+    confirm_password = serializers.CharField(required=True)
+
+    def validate(self, data):
+        if data['new_password'] != data['confirm_password']:
+            raise serializers.ValidationError({"confirm_password": "Passwords don't match"})
+        
+        user = self.context['request'].user
+        if not user.check_password(data["temp_password"]):
+            raise serializers.ValidationError({"temp_password": "Incorrect temporary password"})
+        
+        return data
+
+    def save(self):
+        user = self.context['request'].user
+        user.set_password(self.validated_data['new_password'])
+        user.save()
+        return user
 
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155, min_length=6)

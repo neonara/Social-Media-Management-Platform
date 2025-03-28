@@ -7,11 +7,40 @@ from django.contrib.auth.tokens import default_token_generator
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 
 from rest_framework.generics import UpdateAPIView
-from .serializers import AdminUserUpdateSerializer, ChangePasswordSerializer, PasswordResetSerializer, SetNewPasswordSerializer, UserLoginSerializer
+from .serializers import AdminUserUpdateSerializer, ChangePasswordSerializer, PasswordResetSerializer, SetNewPasswordSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+
+class CreateUserView(APIView):
+    permission_classes = [IsAdminUser]
+
+    def post(self, request):
+        serializer = CreateUserSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "User created successfully. Credentials sent via email."},
+                status=status.HTTP_201_CREATED
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class FirstTimePasswordChangeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = FirstTimePasswordChangeSerializer(
+            data=request.data, 
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return Response(
+                {"message": "Password changed successfully"}, 
+                status=status.HTTP_200_OK
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class UserLoginView(APIView):
     permission_classes = [AllowAny]  
