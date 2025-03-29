@@ -72,7 +72,8 @@ class FirstTimePasswordChangeView(APIView):
     permission_classes = [AllowAny]  # Allow anyone to change first-time password
 
     def post(self, request):
-        serializer = FirstTimePasswordChangeSerializer(data=request.data)
+        serializer = FirstTimePasswordChangeSerializer(data=request.data,context={'request': request})
+        
         if serializer.is_valid():
             email = serializer.validated_data['email']
             password = serializer.validated_data['password']
@@ -114,6 +115,7 @@ class FirstTimePasswordChangeView(APIView):
                 )
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 class UserLoginView(APIView):
     permission_classes = [AllowAny]  
 
