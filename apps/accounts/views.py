@@ -47,32 +47,36 @@ class CreateUserView(APIView):
     def post(self, request):
         serializer = CreateUserSerializer(data=request.data)
         if serializer.is_valid():
-            user = serializer.save()
-            
-            # Get the password from context if available (we'll add this in the serializer)
-            temp_password = getattr(serializer, 'temp_password', None)
-            
-            response_data = {"message": "User created successfully"}
-            
-            # Include credentials in the API response for development
-            if settings.DEBUG:
-                response_data.update({
-                    "dev_info": {
+            try:
+                user = serializer.save()
+                
+                # Get the password from the serializer
+                password = getattr(serializer, 'password', None)
+                
+                response_data = {"message": "User created successfully"}
+                
+                # Include credentials in the API response for development
+                if settings.DEBUG:
+                    response_data.update({
                         "message": "DEVELOPMENT ONLY - Credentials for testing",
                         "email": user.email,
-                        "temp_password": temp_password,
+                        "password": password,
                         "reset_link": f"{settings.FRONTEND_URL}/first-reset-password?email={user.email}"
-                    }
-                })
-            
-            return Response(response_data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+                    })
+                
+                return Response(response_data, status=status.HTTP_201_CREATED)
+            except Exception as e:
+                return Response(
+                    {"error": f"Failed to create user: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
+
 class FirstTimePasswordChangeView(APIView):
     permission_classes = [AllowAny]  # Allow anyone to change first-time password
 
     def post(self, request):
-        serializer = FirstTimePasswordChangeSerializer(data=request.data,context={'request': request})
+        serializer = FirstTimePasswordChangeSerializer(data=request.data)
         
         if serializer.is_valid():
             email = serializer.validated_data['email']
@@ -217,3 +221,20 @@ class AdminUpdateUserView(UpdateAPIView):
        obj = queryset.get(pk=self.kwargs['user_id'])
        self.check_object_permissions(self.request ,obj)
        return obj
+    
+class AdminDeleteUserView(APIView):
+    permission_classes = [IsAdminUser]  # Only admin can delete users
+
+    def delete(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+            email = user.email  # Store email before deletion for the response message
+            user.delete()
+            return Response(
+                {'message': f'User with ID {user_id} (email: {email}) has been deleted successfully'},
+                status=status.HTTP_200_OK  # Change to 200 OK so message is displayed
+            )
+        except User.DoesNotExist:
+            return Response({"error": "User does not exist"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            return Response({"error": f"Error deleting user: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

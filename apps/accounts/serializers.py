@@ -22,10 +22,20 @@ class CreateUserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['email', 'role']
 
+    def validate_email(self, value):
+        """
+        Check if the email already exists in the system.
+        """
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+    
     def create(self, validated_data):
         email = validated_data['email']
         role = validated_data.pop('role', 'client')  # Default to client if not specified
         password = generate_password()
+
+        self.password = password
         
         user = User.objects.create_user(
             email=email,
@@ -81,10 +91,12 @@ class FirstTimePasswordChangeSerializer(serializers.Serializer):
     new_password = serializers.CharField(required=True, min_length=8)
 
     def validate(self, data):
-        # Get user by email (no longer need request.user)
+        # Get user by email
         email = data.get('email')
         try:
             user = User.objects.get(email=email)
+            # Store the user for save method
+            self.user = user
         except User.DoesNotExist:
             raise serializers.ValidationError({"email": "User not found."})
 
@@ -94,11 +106,10 @@ class FirstTimePasswordChangeSerializer(serializers.Serializer):
         return data
 
     def save(self):
-        email = self.validated_data['email']
-        user = User.objects.get(email=email)
-        user.set_password(self.validated_data['new_password'])
-        user.save()
-        return user
+        # Use the stored user instance
+        self.user.set_password(self.validated_data['new_password'])
+        self.user.save()
+        return self.user
 
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155, min_length=6)
