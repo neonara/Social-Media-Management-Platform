@@ -6,13 +6,14 @@ from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 
-from rest_framework.generics import UpdateAPIView
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
 from .serializers import AdminUserUpdateSerializer, ChangePasswordSerializer, PasswordResetSerializer, SetNewPasswordSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.generics import UpdateAPIView
+from rest_framework import generics, status
+from rest_framework.response import Response
+from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer
 
 class ListUsers(APIView):
     permission_classes = [IsAdminUser]
@@ -119,7 +120,7 @@ class FirstTimePasswordChangeView(APIView):
                 )
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
 class UserLoginView(APIView):
     permission_classes = [AllowAny]  
 
@@ -198,6 +199,29 @@ class ChangePasswordView(APIView):
             request.user.set_password(serializer.validated_data["new_password"])
             request.user.save()
             return Response({"message": "Password changed successfully"}, status=status.HTTP_200_OK)
+
+class PasswordResetRequestView(generics.GenericAPIView):
+    serializer_class = PasswordResetRequestSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            serializer.send_reset_email()
+            return Response({"message": "Password reset email sent."}, status=status.HTTP_200_OK)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PasswordResetConfirmView(generics.GenericAPIView):
+    serializer_class = PasswordResetConfirmSerializer
+
+    def post(self, request, uid, token):
+        data = {"uid": uid, "token": token, "new_password": request.data.get("new_password")}
+        serializer = self.get_serializer(data=data)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Password reset successful."}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class AdminUpdateUserView(UpdateAPIView):
@@ -238,3 +262,4 @@ class AdminDeleteUserView(APIView):
             return Response({"error": "User does not exist"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": f"Error deleting user: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        

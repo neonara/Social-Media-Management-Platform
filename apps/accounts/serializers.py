@@ -110,6 +110,9 @@ class FirstTimePasswordChangeSerializer(serializers.Serializer):
         self.user.set_password(self.validated_data['new_password'])
         self.user.save()
         return self.user
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.core.mail import send_mail
 
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155, min_length=6)
@@ -242,6 +245,55 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError({"old_password": "Incorrect password"})
         return data
     
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        try:
+            user = User.objects.get(email=value)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("User with this email does not exist.")
+        
+        return value
+
+    def send_reset_email(self):
+        email = self.validated_data["email"]
+        user = User.objects.get(email=email)
+        token = PasswordResetTokenGenerator().make_token(user)
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        reset_link = f"http://127.0.0.1:8000/api/auth/reset-password-confirm/{uid}/{token}/"
+
+        send_mail(
+            "Password Reset Request",
+            f"Click the link below to reset your password:\n\n{reset_link}",
+            "noreply@yourapp.com",
+            [email],
+            fail_silently=False,
+        )
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(write_only=True, min_length=6)
+
+    def validate(self, data):
+        try:
+            uid = force_str(urlsafe_base64_decode(data["uid"]))
+            user = User.objects.get(pk=uid)
+
+            if not PasswordResetTokenGenerator().check_token(user, data["token"]):
+                raise serializers.ValidationError("Invalid or expired token.")
+
+        except (User.DoesNotExist, ValueError, TypeError):
+            raise serializers.ValidationError("Invalid user or token.")
+
+        return {"user": user, "new_password": data["new_password"]}
+
+    def save(self):
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["new_password"])
+        user.save()
+
 
 class AdminUserUpdateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
