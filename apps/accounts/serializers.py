@@ -5,6 +5,8 @@ from rest_framework.exceptions import AuthenticationFailed
 from .models import User
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from .utils.password_utils import generate_password
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
 from django.conf import settings
 
@@ -110,9 +112,6 @@ class FirstTimePasswordChangeSerializer(serializers.Serializer):
         self.user.set_password(self.validated_data['new_password'])
         self.user.save()
         return self.user
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.core.mail import send_mail
 
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155, min_length=6)
@@ -162,7 +161,7 @@ class UserLoginSerializer(serializers.ModelSerializer):
             'is_community_manager': user.is_community_manager,
             'is_client': user.is_client,
         }
-
+    
 class LogoutUserSerializer(serializers.Serializer):
     refresh_token = serializers.CharField()
 
@@ -177,26 +176,6 @@ class LogoutUserSerializer(serializers.Serializer):
             
         except Exception as e:
             raise serializers.ValidationError("Invalid token")
-        
-class PasswordResetSerializer(serializers.Serializer):
-    email = serializers.EmailField(max_length=155, min_length=6)
-
-    class Meta:
-        fields = ['email']
-
-    def validate(self, attrs):
-        email = attrs.get('email')
-        user = User.objects.filter(email=email).first()
-        if not user:
-            raise serializers.ValidationError("Invalid email")
-        if not user.is_verified:  
-            raise serializers.ValidationError("Email is not verified")
-        uid64 = user.id
-        token = PasswordResetTokenGenerator().make_token(user)
-        reset_link = f'http://127.0.0.1:8000/api/auth/reset/{uid64}/{token}'  
-        return {
-            'reset_link': reset_link
-        }
         
 class SetNewPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(max_length=68, min_length=6, write_only=True)
