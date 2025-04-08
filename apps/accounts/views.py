@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from rest_framework.generics import UpdateAPIView
-from .serializers import AdminUserUpdateSerializer, UserLoginSerializer
+from .serializers import AdminUserUpdateSerializer, UserLoginSerializer, AssignModeratorSerializer, AssigncommunityManagerstoModeratorsSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework import generics, status
 from rest_framework.response import Response
@@ -56,7 +56,6 @@ class PasswordResetRequestView(generics.GenericAPIView):
         
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-
 class PasswordResetConfirmView(generics.GenericAPIView):
     serializer_class = PasswordResetConfirmSerializer
 
@@ -91,3 +90,82 @@ class AdminUpdateUserView(UpdateAPIView):
        obj = queryset.get(pk=self.kwargs['user_id'])
        self.check_object_permissions(self.request ,obj)
        return obj
+   
+class AssignModeratorToClientView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, client_id):
+        if not request.user.is_administrator:
+            return Response({"error": "Only administrators can assign moderators."}, status=403)
+
+        try:
+            client = User.objects.get(id=client_id, is_client=True)
+        except User.DoesNotExist:
+            return Response({"error": "Client not found."}, status=404)
+
+        serializer = AssignModeratorSerializer(data=request.data)
+        if serializer.is_valid():
+            moderator_id = serializer.validated_data["moderator_id"]
+            moderator = User.objects.get(id=moderator_id)
+
+            client.assigned_moderator = moderator
+            client.save()
+
+            return Response({"message": f"Moderator {moderator.email} assigned to client {client.email}."})
+        return Response(serializer.errors, status=400)
+    
+class AssignCommunityManagerToModeratorView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, moderator_id):
+        if not request.user.is_administrator:
+            return Response({"error": "Only administrators can assign community managers."}, status=403)
+
+        try:
+            moderator = User.objects.get(id=moderator_id, is_moderator=True)
+        except User.DoesNotExist:
+            return Response({"error": "Moderator not found."}, status=404)
+
+        serializer = AssigncommunityManagerstoModeratorsSerializer(data=request.data)
+        if serializer.is_valid():
+            cm_id = serializer.validated_data["cm_id"]
+            cm = User.objects.get(id=cm_id)
+
+            moderator.assigned_communitymanagers = cm
+            moderator.save()
+
+            return Response({"message": f"community Manager {cm.email} assigned to moderator {moderator.email}."})
+        return Response(serializer.errors, status=400)
+    
+class ManageAssignedCommunityManagerView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        #View the assigned CM
+    
+        if not request.user.is_moderator:
+            return Response({"error": "Only moderators can view assigned community managers."}, status=403)
+
+        #get
+        assigned_cm = request.user.assigned_communitymanagers
+        if assigned_cm:
+            return Response({
+                "message": f"Assigned Community Manager: {assigned_cm.email}",
+                "cm_id": assigned_cm.id,
+                "cm_email": assigned_cm.email,
+                "cm_name": f"{assigned_cm.first_name} {assigned_cm.last_name}",
+            })
+        else:
+            return Response({"message": "No Community Manager assigned."}, status=404)
+
+    def delete(self, request):
+        #delete
+        if not request.user.is_moderator:
+            return Response({"error": "Only moderators can remove assigned community managers."}, status=403)
+        assigned_cm = request.user.assigned_communitymanagers
+        if not assigned_cm:
+            return Response({"error": "No Community Manager assigned."}, status=404)
+        request.user.assigned_communitymanagers = None
+        request.user.save()
+
+        return Response({"message": "Assigned Community Manager removed."})
