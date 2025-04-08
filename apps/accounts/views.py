@@ -8,7 +8,7 @@ from django.contrib.auth.tokens import default_token_generator
 from rest_framework.views import APIView
 
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
-from .serializers import AdminUserUpdateSerializer, ChangePasswordSerializer, PasswordResetSerializer, SetNewPasswordSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer
+from .serializers import AdminUserUpdateSerializer, ChangePasswordSerializer, SetNewPasswordSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status

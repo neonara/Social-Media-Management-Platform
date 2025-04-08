@@ -19,7 +19,7 @@ urlpatterns = [
     
     # User management URLs
     path('users/', ListUsers.as_view(), name='user-list'),
-    path('users/update/<int:user_id>/', AdminUpdateUserView.as_view(), name='user-update'),
-    path('users/delete/<int:user_id>/', AdminDeleteUserView.as_view(), name='user-delete'),
+    path('users/<int:user_id>/', AdminUpdateUserView.as_view(), name='user-update'),
+    path('users/<int:user_id>/', AdminDeleteUserView.as_view(), name='user-delete'),
     path('users/update-profile/', AdminUpdateUserView.as_view(), name='update-profile'),
 ]
