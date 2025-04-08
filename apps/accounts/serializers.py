@@ -10,6 +10,69 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.core.mail import send_mail
 from django.conf import settings
 
+class UserLoginSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(max_length=155, min_length=6)
+    password = serializers.CharField(max_length=68, write_only=True)
+    full_name = serializers.CharField(max_length=255, read_only=True)
+    access_token = serializers.CharField(max_length=255, read_only=True)
+    refresh_token = serializers.CharField(max_length=255, read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            'email', 'password', 'full_name', 
+            'access_token', 'refresh_token', 
+            'is_administrator', 'is_moderator', 
+            'is_community_manager', 'is_client'
+        ]
+
+    def validate(self, attrs):
+        email = attrs.get('email')
+        password = attrs.get('password')
+        request = self.context.get('request')
+
+        user = authenticate(request, email=email, password=password)
+
+        if not user:
+            raise AuthenticationFailed("Invalid credentials. Please try again.")
+
+        if not user.is_verified:
+            raise AuthenticationFailed("Email is not verified.")
+
+        if not user.is_active:  
+            raise AuthenticationFailed("Your account is inactive. Contact support.")
+
+        refresh = RefreshToken.for_user(user)
+        tokens = {
+            'access_token': str(refresh.access_token),
+            'refresh_token': str(refresh),
+        }
+
+        return {
+            'email': user.email,
+            'full_name': user.get_full_name(),
+            'access_token': tokens['access_token'],
+            'refresh_token': tokens['refresh_token'],
+            'is_administrator': user.is_administrator,
+            'is_moderator': user.is_moderator,
+            'is_community_manager': user.is_community_manager,
+            'is_client': user.is_client,
+        }
+    
+class LogoutUserSerializer(serializers.Serializer):
+    refresh_token = serializers.CharField()
+
+    def validate(self, attrs):
+        self.token = attrs['refresh_token']
+        return attrs
+
+    def save(self, **kwargs):
+        try:
+            token = RefreshToken(self.token)
+            token.blacklist()  
+            
+        except Exception as e:
+            raise serializers.ValidationError("Invalid token")
 
 class CreateUserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155)
@@ -113,70 +176,7 @@ class FirstTimePasswordChangeSerializer(serializers.Serializer):
         self.user.save()
         return self.user
 
-class UserLoginSerializer(serializers.ModelSerializer):
-    email = serializers.EmailField(max_length=155, min_length=6)
-    password = serializers.CharField(max_length=68, write_only=True)
-    full_name = serializers.CharField(max_length=255, read_only=True)
-    access_token = serializers.CharField(max_length=255, read_only=True)
-    refresh_token = serializers.CharField(max_length=255, read_only=True)
 
-    class Meta:
-        model = User
-        fields = [
-            'email', 'password', 'full_name', 
-            'access_token', 'refresh_token', 
-            'is_administrator', 'is_moderator', 
-            'is_community_manager', 'is_client'
-        ]
-
-    def validate(self, attrs):
-        email = attrs.get('email')
-        password = attrs.get('password')
-        request = self.context.get('request')
-
-        user = authenticate(request, email=email, password=password)
-
-        if not user:
-            raise AuthenticationFailed("Invalid credentials. Please try again.")
-
-        if not user.is_verified:
-            raise AuthenticationFailed("Email is not verified.")
-
-        if not user.is_active:  
-            raise AuthenticationFailed("Your account is inactive. Contact support.")
-
-        refresh = RefreshToken.for_user(user)
-        tokens = {
-            'access_token': str(refresh.access_token),
-            'refresh_token': str(refresh),
-        }
-
-        return {
-            'email': user.email,
-            'full_name': user.get_full_name(),
-            'access_token': tokens['access_token'],
-            'refresh_token': tokens['refresh_token'],
-            'is_administrator': user.is_administrator,
-            'is_moderator': user.is_moderator,
-            'is_community_manager': user.is_community_manager,
-            'is_client': user.is_client,
-        }
-    
-class LogoutUserSerializer(serializers.Serializer):
-    refresh_token = serializers.CharField()
-
-    def validate(self, attrs):
-        self.token = attrs['refresh_token']
-        return attrs
-
-    def save(self, **kwargs):
-        try:
-            token = RefreshToken(self.token)
-            token.blacklist()  
-            
-        except Exception as e:
-            raise serializers.ValidationError("Invalid token")
-        
 class SetNewPasswordSerializer(serializers.Serializer):
     password = serializers.CharField(max_length=68, min_length=6, write_only=True)
     confirm_password = serializers.CharField(max_length=68, min_length=6, write_only=True)
