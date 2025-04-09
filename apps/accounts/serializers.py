@@ -273,6 +273,26 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         user.set_password(self.validated_data["new_password"])
         user.save()
 
+class AssignModeratorSerializer(serializers.Serializer):
+    moderator_id = serializers.IntegerField()
+
+    def validate_moderator_id(self, value):
+        try:
+            moderator = User.objects.get(id=value, is_moderator=True)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Moderator does not exist or is not a valid moderator.")
+        return value
+
+class AssigncommunityManagerstoModeratorsSerializer(serializers.Serializer):
+    cm_id = serializers.IntegerField()
+
+    def validate_cm_id(self, value):
+        try:
+            cm = User.objects.get(id=value, is_community_manager=True)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("community Manager does not exist or is not a valid CM.")
+        return value
+
 
 class AdminUserUpdateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)

@@ -10,3 +10,4 @@
 **/__pycache__/
 /backend/social_media_management/settings.py
 **/migrations/
+.env
