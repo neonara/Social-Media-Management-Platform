@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import ListUsers, PasswordResetRequestView, UserLoginView, AdminUpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView
+from .views import AssignCommunityManagerToModeratorView, AssignModeratorToClientView, ListUsers, ManageAssignedCommunityManagerView, PasswordResetRequestView, UserLoginView, AdminUpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView
 
 urlpatterns = [
     # Authentication URLs
@@ -14,7 +14,12 @@ urlpatterns = [
     
     # User management URLs
     path('users/', ListUsers.as_view(), name='user-list'),
-    path('users/<int:user_id>/', AdminUpdateUserView.as_view(), name='user-update'),
-    path('users/<int:user_id>/', AdminDeleteUserView.as_view(), name='user-delete'),
+    path('users/update/<int:user_id>/', AdminUpdateUserView.as_view(), name='user-update'),
+    path('users/delete/<int:user_id>/', AdminDeleteUserView.as_view(), name='user-delete'),
     path('users/update-profile/', AdminUpdateUserView.as_view(), name='update-profile'),
+    
+    # Assignment URLs
+    path('clients/<int:client_id>/assign-moderator/', AssignModeratorToClientView.as_view(), name='assign-moderator'),
+    path('moderators/<int:moderator_id>/assign-cm/', AssignCommunityManagerToModeratorView.as_view(), name='assign-cm'),
+    path('moderators/assigned-cm/', ManageAssignedCommunityManagerView.as_view(), name='manage-assigned-cm'),
 ]
