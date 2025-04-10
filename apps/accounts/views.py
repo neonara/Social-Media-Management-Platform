@@ -3,12 +3,11 @@ from django.conf import settings
 from rest_framework.views import APIView
 
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
-from .serializers import AdminUserUpdateSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, AssigncommunityManagerstoModeratorsSerializer
+from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, AdminUserUpdateSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer
 
 class ListUsers(APIView):
     permission_classes = [IsAdminUser]
