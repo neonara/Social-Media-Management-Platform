@@ -1,11 +1,30 @@
+# Core Django dependencies
 Django==4.2
 djangorestframework==3.14.0
-psycopg2-binary==2.9.9
-gunicorn==20.1.0
-django-cors-headers==3.13.0
 djangorestframework-simplejwt==5.2.2
-django-environ==0.9.0
+django-cors-headers==3.13.0
+psycopg2-binary==2.9.9
+python-dotenv==1.1.0
+requests==2.31.0
 celery==5.3.0
 redis==4.5.1
-Pillow==9.5.0
-requests==2.31.0
+
+# Support libraries
+asgiref==3.8.1
+PyJWT==2.10.1
+python-dateutil==2.9.0.post0
+sqlparse==0.5.3
+tzdata==2025.1
+urllib3==2.3.0
+certifi==2025.1.31
+charset-normalizer==3.4.1
+
+# Development tools
+pytest==7.4.0  # For testing
+black==23.7.0  # For code formatting
+isort==5.12.0  # For import sorting
+flake8==6.1.0  # For linting
+
+# Optional - Comment out if not needed
+# Pillow==9.5.0  # For image processing
+

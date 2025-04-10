@@ -29,6 +29,23 @@ class User(AbstractUser):
     is_moderator = models.BooleanField(default=False)
     is_community_manager = models.BooleanField(default=False)
     is_client = models.BooleanField(default=False)
+    assigned_moderator = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_cms',
+        limit_choices_to={'is_moderator': True}
+    )
+    assigned_communitymanagers = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='assigned_moderators',
+        limit_choices_to={'is_community_manager': True}
+    )
+    
     username = None
     
     USERNAME_FIELD = 'email'
