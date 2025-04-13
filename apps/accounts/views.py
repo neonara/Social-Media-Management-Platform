@@ -1,40 +1,56 @@
 from .models import User
 from django.conf import settings
 from rest_framework.views import APIView
+from django.core.mail import send_mail
 
-from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, AdminUserUpdateSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer
+from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, UserUpdateSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer
 
 class ListUsers(APIView):
-    permission_classes = [IsAdminUser]
-
     def get(self, request):
         users = User.objects.all()
-        user_data = [
-            {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "is_active": user.is_active,
-            "is_staff": user.is_staff,
-            "roles": [
-                role
-                for role, has_role in {
-                "administrator": user.is_administrator,
-                "moderator": user.is_moderator,
-                "community_manager": user.is_community_manager,
-                "client": user.is_client,
-                }.items()
-                if has_role
-            ],  # Dynamically include roles based on user attributes
+        user_data = []
+
+        for user in users:
+            data = {
+                "id": user.id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "is_active": user.is_active,
+                "is_staff": user.is_staff,
+                "roles": [
+                    role
+                    for role, has_role in {
+                        "administrator": user.is_administrator,
+                        "moderator": user.is_moderator,
+                        "community_manager": user.is_community_manager,
+                        "client": user.is_client,
+                    }.items()
+                    if has_role
+                ],
             }
-            for user in users
-        ]
+
+            # If user is a client, add assigned moderator's full name
+            if user.is_client and user.assigned_moderator:
+                data["assigned_moderator"] = user.assigned_moderator.full_name
+            else:
+                data["assigned_moderator"] = None
+
+            # If user is a moderator, add a comma-separated list of assigned CMs
+            if user.is_moderator:
+                assigned_cms = user.assigned_communitymanagers.all()
+                data["assigned_communitymanagers"] = ", ".join([cm.full_name for cm in assigned_cms]) if assigned_cms else None
+            else:
+                data["assigned_communitymanagers"] = None
+
+            user_data.append(data)
+
         return Response(user_data, status=status.HTTP_200_OK)
+
 
 class CreateUserView(APIView):
     permission_classes = [IsAdminUser]
@@ -170,36 +186,34 @@ class PasswordResetConfirmView(generics.GenericAPIView):
             return Response({"message": "Password reset successful."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class AdminUpdateUserView(UpdateAPIView):
-    queryset = User.objects.all()
-    serializer_class = AdminUserUpdateSerializer
-    permission_classes = [IsAuthenticated] 
-    lookup_field = 'user_id'
-    lookup_url_kwargs = 'user_id'
-    def put(self, request , user_id=None):
-        """Custom update logic to handle user updates."""
-        user = self.get_object()
-        serializer = self.get_serializer(user, data=request.data, partial=True)
-        
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"message": "User updated successfully", "user": serializer.data}, status=status.HTTP_200_OK)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    def get_object(self):
-       queryset = self.filter_queryset(self.get_queryset())
-       obj = queryset.get(pk=self.kwargs['user_id'])
-       self.check_object_permissions(self.request ,obj)
-       return obj
-   
-class AssignModeratorToClientView(APIView):
+    
+class UserUpdateUserView(UpdateAPIView):
+    serializer_class = UserUpdateSerializer
     permission_classes = [IsAuthenticated]
 
-    def put(self, request, client_id):
-        if not request.user.is_administrator:
-            return Response({"error": "Only administrators can assign moderators."}, status=403)
+    def get_object(self):
+        """Retrieve the currently authenticated user."""
+        return self.request.user
 
+    
+    def put(self, request, *args, **kwargs):
+        print("Received data:", request.data)  
+        user = self.get_object()
+        serializer = self.get_serializer(user, data=request.data, partial=True)
+
+        if serializer.is_valid():
+            serializer.save()
+            print("Update successful")
+            return Response({"message": "Profile updated successfully", "user": serializer.data}, status=status.HTTP_200_OK)
+        else:
+            print("Serializer errors:", serializer.errors)  # Log errors
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+   
+class AssignModeratorToClientView(APIView):
+    permission_classes = [AllowAny]  # <-- Everyone can access this view
+
+    def put(self, request, client_id):
         try:
             client = User.objects.get(id=client_id, is_client=True)
         except User.DoesNotExist:
@@ -208,22 +222,33 @@ class AssignModeratorToClientView(APIView):
         serializer = AssignModeratorSerializer(data=request.data)
         if serializer.is_valid():
             moderator_id = serializer.validated_data["moderator_id"]
-            moderator = User.objects.get(id=moderator_id)
+            try:
+                moderator = User.objects.get(id=moderator_id, is_moderator=True)
+            except User.DoesNotExist:
+                return Response({"error": "Moderator not found."}, status=404)
 
             client.assigned_moderator = moderator
             client.save()
 
+            send_mail(
+                'You have been assigned as a moderator',
+                f'Hello {moderator.full_name},\n\nYou have been assigned as a moderator for client {client.full_name}. Please review the client details and take the necessary actions.\n\nBest regards,\nAdmin',
+                settings.EMAIL_HOST_USER,
+                [moderator.email],
+                fail_silently=False,
+            )
+
             return Response({"message": f"Moderator {moderator.email} assigned to client {client.email}."})
+
         return Response(serializer.errors, status=400)
-    
+
+
 class AssignCommunityManagerToModeratorView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = []  
 
     def put(self, request, moderator_id):
-        if not request.user.is_administrator:
-            return Response({"error": "Only administrators can assign community managers."}, status=403)
-
         try:
+            
             moderator = User.objects.get(id=moderator_id, is_moderator=True)
         except User.DoesNotExist:
             return Response({"error": "Moderator not found."}, status=404)
@@ -231,14 +256,48 @@ class AssignCommunityManagerToModeratorView(APIView):
         serializer = AssigncommunityManagerstoModeratorsSerializer(data=request.data)
         if serializer.is_valid():
             cm_id = serializer.validated_data["cm_id"]
-            cm = User.objects.get(id=cm_id)
+            try:
+                cm = User.objects.get(id=cm_id, is_community_manager=True)
+            except User.DoesNotExist:
+                return Response({"error": "Community Manager not found."}, status=404)
 
-            moderator.assigned_communitymanagers = cm
+            
+            moderator.assigned_communitymanagers.add(cm)
             moderator.save()
 
-            return Response({"message": f"community Manager {cm.email} assigned to moderator {moderator.email}."})
+            send_mail(
+                'You have been assigned to a moderator',
+                f'Hello {cm.full_name},\n\nYou have been assigned to Moderator {moderator.full_name}. Please review and collaborate.\n\nBest regards,\nAdmin',
+                settings.EMAIL_HOST_USER,
+                [cm.email],
+                fail_silently=False,
+            )
+
+            return Response({"message": f"Community Manager {cm.email} assigned to Moderator {moderator.email}."})
+
         return Response(serializer.errors, status=400)
-    
+
+class RemoveCommunityManagerFromModeratorView(APIView):
+    def delete(self, request, moderator_id, cm_id):
+        try:
+            moderator = User.objects.get(id=moderator_id, is_moderator=True)
+            cm = User.objects.get(id=cm_id, is_community_manager=True)
+            moderator.assigned_communitymanagers.remove(cm)
+            return Response({"message": "Community Manager unassigned from Moderator."}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+
+class RemoveModeratorFromClientView(APIView):
+    def delete(self, request, client_id):
+        try:
+            client = User.objects.get(id=client_id, is_client=True)
+            client.assigned_moderator = None
+            client.save()
+            return Response({"message": "Moderator unassigned from client."}, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({"error": "Client not found."}, status=status.HTTP_404_NOT_FOUND)
+
+
 class ManageAssignedCommunityManagerView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -289,3 +348,16 @@ class AdminDeleteUserView(APIView):
         except Exception as e:
             return Response({"error": f"Error deleting user: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
+class IsAdministrator(BasePermission):
+    """Allows access only to administrators."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_administrator
+
+class FetchEmails(APIView):
+    permission_classes = [IsAuthenticated, IsAdministrator]  # Only admin can fetch emails
+
+    def get(self, request):
+        # No need for additional check since IsAdministrator handles it
+        users = User.objects.all()
+        user_emails = [{"email": user.email} for user in users]
+        return Response(user_emails, status=200)

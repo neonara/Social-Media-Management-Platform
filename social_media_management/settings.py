@@ -56,9 +56,9 @@ CORS_ALLOW_ALL_ORIGINS = True  # For development only
 CORS_ALLOW_CREDENTIALS = True
 
 # # In production, replace with specific origins:
-# CORS_ALLOWED_ORIGINS = [
-#     "http://localhost:3000",
-# ]
+CORS_ALLOWED_ORIGINS = [
+     "http://localhost:3000",
+]
 
 # Allow all needed HTTP methods
 CORS_ALLOW_METHODS = [
