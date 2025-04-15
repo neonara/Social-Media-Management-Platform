@@ -63,6 +63,9 @@ class User(AbstractUser):
         return self.email
 
     def save(self, *args, **kwargs):
-        # Automatically update full_name when first_name or last_name is modified
-        self.full_name = f"{self.first_name} {self.last_name}".strip()
+        
+        if self.first_name is not None and self.last_name is not None:
+            if self.first_name != self._meta.get_field('first_name').value_from_object(self) or \
+               self.last_name != self._meta.get_field('last_name').value_from_object(self):
+                self.full_name = f"{self.first_name} {self.last_name}".strip()
         super().save(*args, **kwargs)

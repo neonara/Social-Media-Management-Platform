@@ -295,12 +295,12 @@ class AssigncommunityManagerstoModeratorsSerializer(serializers.Serializer):
 class UserUpdateSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
     phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    full_name = serializers.CharField(required=False)  
+    full_name = serializers.CharField(required=False)
 
     class Meta:
         model = User
         fields = ['email', 'password', 'is_administrator', 'is_moderator', 'is_community_manager', 
-                  'is_client', 'is_verified', 'phone_number', 'full_name']
+                  'is_client', 'is_verified', 'phone_number', 'full_name', 'username']
 
     def validate(self, data):
         """Ensure only one role is set to True."""
@@ -310,6 +310,14 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         if sum(role_values) > 1:
             raise serializers.ValidationError("A user can only have one role at a time.")
         
+        email = data.get('email', None)
+        if email:
+            # Check if the email is unique and belongs to a different user
+            current_user = self.instance  # The current user instance being updated
+            if email != current_user.email:  # Only check for uniqueness if the email has changed
+                if User.objects.filter(email=email).exclude(id=current_user.id).exists():
+                    raise serializers.ValidationError("The email address is already in use by another user.")
+
         return data
 
     def update(self, instance, validated_data):
@@ -318,7 +326,6 @@ class UserUpdateSerializer(serializers.ModelSerializer):
 
         if password:
             instance.set_password(password)
-
         
         full_name = validated_data.get('full_name', None)
         

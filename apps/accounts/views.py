@@ -4,6 +4,7 @@ from rest_framework.views import APIView
 from django.core.mail import send_mail
 
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
+from rest_framework.authentication import SessionAuthentication
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
@@ -34,13 +35,13 @@ class ListUsers(APIView):
                 ],
             }
 
-            # If user is a client, add assigned moderator's full name
+          
             if user.is_client and user.assigned_moderator:
                 data["assigned_moderator"] = user.assigned_moderator.full_name
             else:
                 data["assigned_moderator"] = None
 
-            # If user is a moderator, add a comma-separated list of assigned CMs
+            
             if user.is_moderator:
                 assigned_cms = user.assigned_communitymanagers.all()
                 data["assigned_communitymanagers"] = ", ".join([cm.full_name for cm in assigned_cms]) if assigned_cms else None
@@ -61,12 +62,12 @@ class CreateUserView(APIView):
             try:
                 user = serializer.save()
                 
-                # Get the password from the serializer
+                
                 password = getattr(serializer, 'password', None)
                 
                 response_data = {"message": "User created successfully"}
                 
-                # Include credentials in the API response for development
+               
                 if settings.DEBUG:
                     response_data.update({
                         "message": "DEVELOPMENT ONLY - Credentials for testing",
@@ -189,27 +190,31 @@ class PasswordResetConfirmView(generics.GenericAPIView):
     
 class UserUpdateUserView(UpdateAPIView):
     serializer_class = UserUpdateSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
+    authentication_classes = [SessionAuthentication]  # Use session authentication
 
     def get_object(self):
         """Retrieve the currently authenticated user."""
-        return self.request.user
+        user = self.request.user
+        print("Authenticated User:", user)  # Log user details
+        if not user.is_authenticated:
+            print("User is not authenticated!")
+        return user
 
-    
+
     def put(self, request, *args, **kwargs):
-        print("Received data:", request.data)  
-        user = self.get_object()
+        print("Received data:", request.data)  # Debugging: Check the incoming data
+        user = self.get_object()  # Retrieve the authenticated user
         serializer = self.get_serializer(user, data=request.data, partial=True)
 
         if serializer.is_valid():
-            serializer.save()
-            print("Update successful")
+            serializer.save()  # Save the updated profile
+            print("Update successful")  # Debugging: Check if the update was successful
             return Response({"message": "Profile updated successfully", "user": serializer.data}, status=status.HTTP_200_OK)
         else:
-            print("Serializer errors:", serializer.errors)  # Log errors
+            print("Serializer errors:", serializer.errors)  # Debugging: Log errors if any
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-   
+        
 class AssignModeratorToClientView(APIView):
     permission_classes = [AllowAny]  # <-- Everyone can access this view
 
@@ -244,7 +249,7 @@ class AssignModeratorToClientView(APIView):
 
 
 class AssignCommunityManagerToModeratorView(APIView):
-    permission_classes = []  
+    permission_classes = [AllowAny]  
 
     def put(self, request, moderator_id):
         try:
@@ -278,24 +283,40 @@ class AssignCommunityManagerToModeratorView(APIView):
         return Response(serializer.errors, status=400)
 
 class RemoveCommunityManagerFromModeratorView(APIView):
-    def delete(self, request, moderator_id, cm_id):
+     permission_classes = [AllowAny]  
+     def delete(self, request, moderator_id, cm_id):
         try:
+           
             moderator = User.objects.get(id=moderator_id, is_moderator=True)
             cm = User.objects.get(id=cm_id, is_community_manager=True)
-            moderator.assigned_communitymanagers.remove(cm)
-            return Response({"message": "Community Manager unassigned from Moderator."}, status=status.HTTP_200_OK)
+            
+            
+            if cm in moderator.assigned_communitymanagers.all():
+                moderator.assigned_communitymanagers.remove(cm)
+                return Response({"message": "Community Manager unassigned from Moderator."}, status=status.HTTP_200_OK)
+            else:
+                return Response({"error": "This Community Manager is not assigned to this Moderator."}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
-
+        
 class RemoveModeratorFromClientView(APIView):
+    permission_classes = [AllowAny]  
     def delete(self, request, client_id):
         try:
+            
             client = User.objects.get(id=client_id, is_client=True)
+            
+            
+            if client.assigned_moderator is None:
+                return Response({"message": "No moderator assigned to this client."}, status=status.HTTP_400_BAD_REQUEST)
+
+           
             client.assigned_moderator = None
             client.save()
             return Response({"message": "Moderator unassigned from client."}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({"error": "Client not found."}, status=status.HTTP_404_NOT_FOUND)
+
 
 
 class ManageAssignedCommunityManagerView(APIView):
