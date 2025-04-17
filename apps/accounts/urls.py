@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import AssignCommunityManagerToModeratorView, CurrentUserView,FetchEmails, AssignModeratorToClientView,RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, ManageAssignedCommunityManagerView, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView
+from .views import AssignCommunityManagerToModeratorView,AssignedCMsToModeratorView ,CurrentUserView,FetchEmails, AssignModeratorToClientView,RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView
 
 urlpatterns = [
     # Authentication URLs
@@ -13,6 +13,7 @@ urlpatterns = [
     path('auth/reset-password-confirm/<uid>/<token>/', PasswordResetConfirmView.as_view(), name='reset-password-confirm'),
     
     # User management URLs
+    
     path('user/profile/', CurrentUserView.as_view(), name='current_user'),
     path('user/<int:user_id>/', GetUserByIdView.as_view(), name='user-detail'),
     path('users/fetchemail/', FetchEmails.as_view(), name='fetch-email'),
@@ -23,9 +24,9 @@ urlpatterns = [
     # Assignment URLs
     path("clients/<int:client_id>/moderator/", AssignModeratorToClientView.as_view(), name="assign-moderator"),
     path("moderators/<int:moderator_id>/community-manager/", AssignCommunityManagerToModeratorView.as_view(), name="assign-community-manager"),
-    path("moderators/assigned-community-manager/", ManageAssignedCommunityManagerView.as_view(), name="manage-assigned-community-manager"),
     
     path('clients/<int:client_id>/moderator/remove/', RemoveModeratorFromClientView.as_view()),
     path('moderators/<int:moderator_id>/community-manager/<int:cm_id>/remove/', RemoveCommunityManagerFromModeratorView.as_view()),
+    path('moderators/assigned-community-managers/', AssignedCMsToModeratorView.as_view(), name='assigned-community-managers'),
 
 ]
