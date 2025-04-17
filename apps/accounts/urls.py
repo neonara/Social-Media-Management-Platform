@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import AssignCommunityManagerToModeratorView,FetchEmails, AssignModeratorToClientView,RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, ManageAssignedCommunityManagerView, PasswordResetRequestView, UserLoginView, UserUpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView
+from .views import AssignCommunityManagerToModeratorView, CurrentUserView,FetchEmails, AssignModeratorToClientView,RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, ManageAssignedCommunityManagerView, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView
 
 urlpatterns = [
     # Authentication URLs
@@ -13,11 +13,12 @@ urlpatterns = [
     path('auth/reset-password-confirm/<uid>/<token>/', PasswordResetConfirmView.as_view(), name='reset-password-confirm'),
     
     # User management URLs
+    path('user/profile/', CurrentUserView.as_view(), name='current_user'),
+    path('user/<int:user_id>/', GetUserByIdView.as_view(), name='user-detail'),
     path('users/fetchemail/', FetchEmails.as_view(), name='fetch-email'),
     path('users/', ListUsers.as_view(), name='user-list'),
-    path('users/update/<int:user_id>/', UserUpdateUserView.as_view(), name='user-update'),
+    path('users/update/<int:user_id>/', UpdateUserView.as_view(), name='user-update'),
     path('users/delete/<int:user_id>/', AdminDeleteUserView.as_view(), name='user-delete'),
-    path('users/update-profile/', UserUpdateUserView.as_view(), name='update-profile'),
     
     # Assignment URLs
     path("clients/<int:client_id>/moderator/", AssignModeratorToClientView.as_view(), name="assign-moderator"),
@@ -26,6 +27,5 @@ urlpatterns = [
     
     path('clients/<int:client_id>/moderator/remove/', RemoveModeratorFromClientView.as_view()),
     path('moderators/<int:moderator_id>/community-manager/<int:cm_id>/remove/', RemoveCommunityManagerFromModeratorView.as_view()),
-
 
 ]

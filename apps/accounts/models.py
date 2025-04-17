@@ -14,20 +14,21 @@ class CustomUserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        if extra_fields.get("is_staff") is not True:
+        if not extra_fields.get("is_staff"):
             raise ValueError("Superuser must have is_staff=True.")
-        if extra_fields.get("is_superuser") is not True:
+        if not extra_fields.get("is_superuser"):
             raise ValueError("Superuser must have is_superuser=True.")
-        return self.create_user(email=email, password=password, **extra_fields)
+        return self.create_user(email, password, **extra_fields)
 
 class User(AbstractUser):
+
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
-    
-    full_name = models.CharField(max_length=255, blank=True, null=True)
+    first_name = models.CharField(max_length=25, blank=True, null=True)
+    last_name = models.CharField(max_length=25, blank=True, null=True)
+    user_image = models.ImageField(upload_to='accounts/images/', blank=True, null=True)
 
-
-    is_verified = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=True)
     is_administrator = models.BooleanField(default=False)
     is_moderator = models.BooleanField(default=False)
     is_community_manager = models.BooleanField(default=False)
@@ -41,18 +42,14 @@ class User(AbstractUser):
         related_name='clients_assigned',
         limit_choices_to={'is_moderator': True},
         help_text="The Moderator assigned to this Client"
-        
     )
     assigned_communitymanagers = models.ManyToManyField(
-    'self',  # Refers to the same User model
-    blank=True,
-    related_name='assigned_moderators',
-    limit_choices_to={'is_community_manager': True},
-    symmetrical=False  
+        'self',
+        blank=True,
+        related_name='assigned_moderators',
+        limit_choices_to={'is_community_manager': True},
+        symmetrical=False
     )
-
-
-    username = None
 
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name']
@@ -62,10 +59,6 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
 
-    def save(self, *args, **kwargs):
-        
-        if self.first_name is not None and self.last_name is not None:
-            if self.first_name != self._meta.get_field('first_name').value_from_object(self) or \
-               self.last_name != self._meta.get_field('last_name').value_from_object(self):
-                self.full_name = f"{self.first_name} {self.last_name}".strip()
-        super().save(*args, **kwargs)
+    @property
+    def full_name(self):
+        return f"{self.first_name or ''} {self.last_name or ''}".strip()

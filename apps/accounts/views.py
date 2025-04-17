@@ -2,6 +2,7 @@ from .models import User
 from django.conf import settings
 from rest_framework.views import APIView
 from django.core.mail import send_mail
+from rest_framework.exceptions import PermissionDenied
 
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework.authentication import SessionAuthentication
@@ -9,7 +10,13 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
 from rest_framework.response import Response
-from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, UserUpdateSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer
+from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, GetUserSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer
+
+class IsAdministrator(BasePermission):
+    """Allows access only to administrators."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_administrator
+
 
 class ListUsers(APIView):
     def get(self, request):
@@ -21,6 +28,8 @@ class ListUsers(APIView):
                 "id": user.id,
                 "full_name": user.full_name,
                 "email": user.email,
+                "phone_number": user.phone_number,
+
                 "is_active": user.is_active,
                 "is_staff": user.is_staff,
                 "roles": [
@@ -188,33 +197,71 @@ class PasswordResetConfirmView(generics.GenericAPIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-class UserUpdateUserView(UpdateAPIView):
-    serializer_class = UserUpdateSerializer
-    permission_classes = [IsAuthenticated]  # Ensure the user is authenticated
-    authentication_classes = [SessionAuthentication]  # Use session authentication
+class UpdateUserView(UpdateAPIView):
+    queryset = User.objects.all()  # Add this line ✅
+    serializer_class = GetUserSerializer
+    permission_classes = [IsAuthenticated]
 
     def get_object(self):
-        """Retrieve the currently authenticated user."""
-        user = self.request.user
-        print("Authenticated User:", user)  # Log user details
-        if not user.is_authenticated:
-            print("User is not authenticated!")
-        return user
+        return self.request.user
+
+    def update(self, request, *args, **kwargs):
+        restricted_fields = {
+            'is_administrator', 'is_moderator', 'is_community_manager',
+            'is_client', 'is_staff', 'is_supplier', 'is_active',
+            'is_superuser', 'is_verified'
+        }
+        for field in restricted_fields:
+            if field in request.data:
+                raise PermissionDenied(f"You are not allowed to modify the '{field}' field.")
+
+        partial = kwargs.pop('partial', False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-    def put(self, request, *args, **kwargs):
-        print("Received data:", request.data)  # Debugging: Check the incoming data
-        user = self.get_object()  # Retrieve the authenticated user
-        serializer = self.get_serializer(user, data=request.data, partial=True)
 
-        if serializer.is_valid():
-            serializer.save()  # Save the updated profile
-            print("Update successful")  # Debugging: Check if the update was successful
-            return Response({"message": "Profile updated successfully", "user": serializer.data}, status=status.HTTP_200_OK)
-        else:
-            print("Serializer errors:", serializer.errors)  # Debugging: Log errors if any
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        
+class GetUserByIdView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+            data = {
+                "id": user.id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "phone_number": user.phone_number,
+                "email": user.email,
+                "is_staff": user.is_staff,
+                "is_administrator": user.is_administrator,
+                "is_moderator": user.is_moderator,
+                "is_community_manager": user.is_community_manager,
+                "is_client": user.is_client,
+            }
+            
+            # Add related information based on role
+            if user.is_client and user.assigned_moderator:
+                data["assigned_moderator"] = user.assigned_moderator.full_name
+            elif user.is_moderator:
+                assigned_cms = user.assigned_communitymanagers.all()
+                data["assigned_communitymanagers"] = [
+                    {"id": cm.id, "full_name": cm.full_name}
+                    for cm in assigned_cms
+                ] if assigned_cms else []
+            
+            return Response(data, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User not found"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
 class AssignModeratorToClientView(APIView):
     permission_classes = [AllowAny]  # <-- Everyone can access this view
 
@@ -353,7 +400,7 @@ class ManageAssignedCommunityManagerView(APIView):
         return Response({"message": "Assigned Community Manager removed."}) 
     
 class AdminDeleteUserView(APIView):
-    permission_classes = [IsAdminUser]  # Only admin can delete users
+    permission_classes = [IsAdministrator]  # Only admin can delete users
 
     def delete(self, request, user_id):
         try:
@@ -369,10 +416,6 @@ class AdminDeleteUserView(APIView):
         except Exception as e:
             return Response({"error": f"Error deleting user: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
-class IsAdministrator(BasePermission):
-    """Allows access only to administrators."""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.is_administrator
 
 class FetchEmails(APIView):
     permission_classes = [IsAuthenticated, IsAdministrator]  # Only admin can fetch emails
@@ -382,3 +425,9 @@ class FetchEmails(APIView):
         users = User.objects.all()
         user_emails = [{"email": user.email} for user in users]
         return Response(user_emails, status=200)
+    
+class CurrentUserView(APIView):
+    permission_classes = [IsAuthenticated]
+    def get(self, request):
+        serializer = GetUserSerializer(request.user)
+        return Response(serializer.data)
