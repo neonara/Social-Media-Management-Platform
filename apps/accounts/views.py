@@ -21,6 +21,7 @@ class ListUsers(APIView):
                 "id": user.id,
                 "full_name": user.full_name,
                 "email": user.email,
+                "phone_number": user.phone_number,
                 "is_active": user.is_active,
                 "is_staff": user.is_staff,
                 "roles": [
@@ -83,6 +84,8 @@ class CreateUserView(APIView):
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
+
+
 
 class FirstTimePasswordChangeView(APIView):
     permission_classes = [AllowAny]  # Allow anyone to change first-time password
@@ -353,7 +356,7 @@ class ManageAssignedCommunityManagerView(APIView):
         return Response({"message": "Assigned Community Manager removed."}) 
     
 class AdminDeleteUserView(APIView):
-    permission_classes = [IsAdminUser]  # Only admin can delete users
+    permission_classes = [AllowAny]  
 
     def delete(self, request, user_id):
         try:

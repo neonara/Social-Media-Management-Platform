@@ -149,6 +149,15 @@ class CreateUserSerializer(serializers.ModelSerializer):
                 print(f"DEV CREDENTIALS - Email: {email}, Password: {password}")
 
         return user
+    
+class UserDeleteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = []  # We don't need to serialize any fields for deletion
+
+    def delete(self, instance):
+        instance.delete()
+        return instance
 
 class FirstTimePasswordChangeSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
