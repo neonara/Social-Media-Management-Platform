@@ -22,12 +22,12 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(','
 
 INSTALLED_APPS = [
     'apps.accounts',         
-    # 'apps.content',           
+    'apps.content',           
     # 'apps.planning',          
     # 'apps.analytics',        
     # 'apps.notifications',    
     # 'apps.ai_integration',   
-    # 'apps.social_media',    
+    'apps.social_media',    
     # 'apps.collaboration',
     'rest_framework',
     'rest_framework_simplejwt',
@@ -202,3 +202,8 @@ SESSION_CACHE_ALIAS = "default"
 
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = False  # Set to True in production
+
+FACEBOOK_APP_ID = os.getenv("FACEBOOK_APP_ID")
+FACEBOOK_APP_SECRET = os.getenv("FACEBOOK_APP_SECRET")
+FACEBOOK_REDIRECT_URI = os.getenv("FACEBOOK_REDIRECT_URI")
+FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic"
