@@ -16,9 +16,15 @@ class IsAdministrator(BasePermission):
     """Allows access only to administrators."""
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.is_administrator
+    
+class IsModerator(BasePermission):
+    """Allows access only to administrators."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_moderator
 
 
 class ListUsers(APIView):
+    permission_classes = [IsAdministrator]  # Only authenticated users can access this view
     def get(self, request):
         users = User.objects.all()
         user_data = []
@@ -61,6 +67,37 @@ class ListUsers(APIView):
 
         return Response(user_data, status=status.HTTP_200_OK)
 
+class AssignedCMsToModeratorView(APIView):
+    permission_classes = [IsModerator]
+
+    def get(self, request):
+        moderator = request.user
+        assigned_cms = User.objects.filter(assigned_moderators=moderator)
+        cm_data = []
+
+        for cm in assigned_cms:
+            data = {
+                "id": cm.id,
+                "full_name": cm.full_name,
+                "email": cm.email,
+                "phone_number": cm.phone_number,
+                "is_active": cm.is_active,
+                "is_staff": cm.is_staff,
+                "roles": [
+                    role
+                    for role, has_role in {
+                        "administrator": cm.is_administrator,
+                        "moderator": cm.is_moderator,
+                        "community_manager": cm.is_community_manager,
+                        "client": cm.is_client,
+                    }.items()
+                    if has_role
+                ],
+                # Add any other relevant CM information you want to display
+            }
+            cm_data.append(data)
+
+        return Response(cm_data, status=status.HTTP_200_OK)
 
 class CreateUserView(APIView):
     permission_classes = [IsAdminUser]
@@ -223,8 +260,6 @@ class UpdateUserView(UpdateAPIView):
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-
 class GetUserByIdView(APIView):
     permission_classes = [IsAuthenticated]
     
@@ -263,7 +298,7 @@ class GetUserByIdView(APIView):
             )
 
 class AssignModeratorToClientView(APIView):
-    permission_classes = [AllowAny]  # <-- Everyone can access this view
+    permission_classes = [IsAdministrator]  # <-- Everyone can access this view
 
     def put(self, request, client_id):
         try:
@@ -294,9 +329,8 @@ class AssignModeratorToClientView(APIView):
 
         return Response(serializer.errors, status=400)
 
-
 class AssignCommunityManagerToModeratorView(APIView):
-    permission_classes = [AllowAny]  
+    permission_classes = [IsAdministrator]  
 
     def put(self, request, moderator_id):
         try:
@@ -330,7 +364,7 @@ class AssignCommunityManagerToModeratorView(APIView):
         return Response(serializer.errors, status=400)
 
 class RemoveCommunityManagerFromModeratorView(APIView):
-     permission_classes = [AllowAny]  
+     permission_classes = [IsAdministrator]  
      def delete(self, request, moderator_id, cm_id):
         try:
            
@@ -347,7 +381,7 @@ class RemoveCommunityManagerFromModeratorView(APIView):
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
         
 class RemoveModeratorFromClientView(APIView):
-    permission_classes = [AllowAny]  
+    permission_classes = [IsAdministrator]  
     def delete(self, request, client_id):
         try:
             
@@ -364,40 +398,6 @@ class RemoveModeratorFromClientView(APIView):
         except User.DoesNotExist:
             return Response({"error": "Client not found."}, status=status.HTTP_404_NOT_FOUND)
 
-
-
-class ManageAssignedCommunityManagerView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        #View the assigned CM
-    
-        if not request.user.is_moderator:
-            return Response({"error": "Only moderators can view assigned community managers."}, status=403)
-
-        #get
-        assigned_cm = request.user.assigned_communitymanagers
-        if assigned_cm:
-            return Response({
-                "message": f"Assigned Community Manager: {assigned_cm.email}",
-                "cm_id": assigned_cm.id,
-                "cm_email": assigned_cm.email,
-                "cm_name": f"{assigned_cm.first_name} {assigned_cm.last_name}",
-            })
-        else:
-            return Response({"message": "No Community Manager assigned."}, status=404)
-
-    def delete(self, request):
-        #delete
-        if not request.user.is_moderator:
-            return Response({"error": "Only moderators can remove assigned community managers."}, status=403)
-        assigned_cm = request.user.assigned_communitymanagers
-        if not assigned_cm:
-            return Response({"error": "No Community Manager assigned."}, status=404)
-        request.user.assigned_communitymanagers = None
-        request.user.save()
-
-        return Response({"message": "Assigned Community Manager removed."}) 
     
 class AdminDeleteUserView(APIView):
     permission_classes = [IsAdministrator]  # Only admin can delete users
