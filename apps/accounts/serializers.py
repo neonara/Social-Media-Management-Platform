@@ -173,22 +173,15 @@ class CreateCMSerializer(serializers.ModelSerializer):
         role = 'community_manager'  # Explicitly set the role
         password = generate_password()
 
-        # Generate a unique username based on the email
-        base_username = slugify(email.split('@')[0])
-        username = base_username
-        suffix = 1
-        while User.objects.filter(username=username).exists():
-            username = f"{base_username}-{suffix}"
-            suffix += 1
-
         self.password = password
 
         user = User.objects.create_user(
             email=email,
             password=password,
-            username=username,
             is_active=True,
-            is_verified=True
+            is_verified=True,
+            first_name="",  # You might want to set default values or collect these
+            last_name="",   # in your frontend if needed
         )
 
         user.is_community_manager = True
@@ -319,6 +312,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
             [email],
             fail_silently=False,
         )
+
 class PasswordResetConfirmSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
@@ -357,6 +351,16 @@ class AssignModeratorSerializer(serializers.Serializer):
             raise serializers.ValidationError("Moderator does not exist or is not a valid moderator.")
         return value
 
+class AssignCommunityManagerToClientSerializer(serializers.Serializer):
+    cm_id = serializers.IntegerField(required=True)
+
+    def validate_cm_id(self, value):
+        try:
+            User.objects.get(id=value, is_community_manager=True)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("A community manager with this ID does not exist.")
+        return value
+
 class AssigncommunityManagerstoModeratorsSerializer(serializers.Serializer):
     cm_id = serializers.IntegerField()
 
@@ -378,7 +382,10 @@ class AssignCMToClientSerializer(serializers.Serializer):
         return value
     
 class RemoveCMsFromClientSerializer(serializers.Serializer):
-    community_manager_ids = serializers.ListField(child=serializers.IntegerField(), required=True)
+    community_manager_ids = serializers.ListField(
+        child=serializers.IntegerField(),
+        required=True
+    )
 
     def validate_community_manager_ids(self, values):
         if not values:
@@ -433,3 +440,4 @@ class GetUserSerializer(serializers.ModelSerializer):
         instance.save()
 
         return instance
+

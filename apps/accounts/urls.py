@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import ClientAssignedCommunityManagersView,EligibleCMsForClient, RemoveClientCommunityManagersView, AssignedModeratorClientsView, AssignCMToClientView,CreateCMView, AssignCommunityManagerToModeratorView,AssignedModeratorCommunityManagersView ,CurrentUserView,FetchEmails, AssignModeratorToClientView,RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView
+from .views import UpdateUserView,ClientAssignedCommunityManagersView,EligibleCMsForClient, RemoveClientCommunityManagersView, AssignedModeratorClientsView, AssignCMToClientView,CreateCMView, AssignCommunityManagerToModeratorView,AssignedModeratorCommunityManagersView ,CurrentUserView,FetchEmails, AssignModeratorToClientView,RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView
 
 urlpatterns = [
     # Authentication URLs
@@ -14,9 +14,8 @@ urlpatterns = [
     # User management URLs
     path('users/fetchemail/', FetchEmails.as_view(), name='fetch-email'),
     path('users/', ListUsers.as_view(), name='user-list'),
-    path('users/update/<int:user_id>/', UserUpdateUserView.as_view(), name='user-update'),
+    path('users/update/<int:user_id>/', UpdateUserView.as_view(), name='user-update'),
     path('users/delete/<int:user_id>/', AdminDeleteUserView.as_view(), name='user-delete'),
-    path('users/update-profile/', UserUpdateUserView.as_view(), name='update-profile'),
     
     # Assignment URLs
     path("clients/<int:client_id>/moderator/", AssignModeratorToClientView.as_view(), name="assign-moderator"),

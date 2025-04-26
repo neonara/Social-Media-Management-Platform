@@ -8,6 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
 from rest_framework.response import Response
+from rest_framework.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from .serializers import RemoveCMsFromClientSerializer, AssignCMToClientSerializer, PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, GetUserSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer, AssigncommunityManagerstoModeratorsSerializer, CreateCMSerializer
 
@@ -22,54 +23,13 @@ class IsModerator(BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.is_moderator
 
+
+
 class IsModeratorOrAdmin(BasePermission):
     """Allows access only to moderators or administrators."""
     def has_permission(self, request, view):
         return request.user.is_authenticated and (request.user.is_moderator or request.user.is_administrator)
 
-#get
-
-class ListUsers(APIView):
-    def get(self, request):
-        users = User.objects.all()
-        user_data = []
-
-        for user in users:
-            data = {
-                "id": user.id,
-                "full_name": user.full_name,
-                "email": user.email,
-                "phone_number": user.phone_number,
-                "is_active": user.is_active,
-                "is_staff": user.is_staff,
-                "roles": [
-                    role
-                    for role, has_role in {
-                        "administrator": user.is_administrator,
-                        "moderator": user.is_moderator,
-                        "community_manager": user.is_community_manager,
-                        "client": user.is_client,
-                    }.items()
-                    if has_role
-                ],
-            }
-
-          
-            if user.is_client and user.assigned_moderator:
-                data["assigned_moderator"] = user.assigned_moderator.full_name
-            else:
-                data["assigned_moderator"] = None
-
-            
-            if user.is_moderator:
-                assigned_cms = user.assigned_communitymanagers.all()
-                data["assigned_communitymanagers"] = ", ".join([cm.full_name for cm in assigned_cms]) if assigned_cms else None
-            else:
-                data["assigned_communitymanagers"] = None
-
-            user_data.append(data)
-
-        return Response(user_data, status=status.HTTP_200_OK)
 
 # cms assigned to the logged in moderator
 
@@ -262,23 +222,36 @@ class CreateCMView(APIView):
         serializer = CreateCMSerializer(data={'email': request.data.get('email')})
         if serializer.is_valid():
             try:
-                user = serializer.save()  # Create the Community Manager user
+                # Create the Community Manager user
+                user = serializer.save()
 
-                # The request user is guaranteed to be a Moderator due to the permission
+                # Ensure the request user is a Moderator
                 moderator = request.user
+                if not moderator.is_moderator:
+                    return Response(
+                        {"error": "Only moderators can create and assign community managers."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
+                # Assign the community manager to the moderator
                 moderator.assigned_communitymanagers.add(user)
                 moderator.save()
-                return Response({"message": f"Community Manager {user.email} created and assigned to you."}, status=status.HTTP_201_CREATED)
+
+                return Response(
+                    {"message": f"Community Manager {user.email} created and assigned to you."},
+                    status=status.HTTP_201_CREATED
+                )
 
             except Exception as e:
-                return Response({"error": f"Failed to create Community Manager: {str(e)}"},
-                                status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                return Response(
+                    {"error": f"Failed to create Community Manager: {str(e)}"},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
-    
 
 #login logout
 class UserLoginView(APIView):
+    
     permission_classes = [AllowAny]  
 
     def post(self, request):
@@ -420,73 +393,6 @@ class UpdateUserView(UpdateAPIView):
 
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-#ssign
-class AssignModeratorToClientView(APIView):
-    permission_classes = [AllowAny]  # <-- Everyone can access this view
-
-    def put(self, request, client_id):
-        try:
-            client = User.objects.get(id=client_id, is_client=True)
-        except User.DoesNotExist:
-            return Response({"error": "Client not found."}, status=404)
-
-        serializer = AssignModeratorSerializer(data=request.data)
-        if serializer.is_valid():
-            moderator_id = serializer.validated_data["moderator_id"]
-            try:
-                moderator = User.objects.get(id=moderator_id, is_moderator=True)
-            except User.DoesNotExist:
-                return Response({"error": "Moderator not found."}, status=404)
-
-            client.assigned_moderator = moderator
-            client.save()
-
-            send_mail(
-                'You have been assigned as a moderator',
-                f'Hello {moderator.full_name},\n\nYou have been assigned as a moderator for client {client.full_name}. Please review the client details and take the necessary actions.\n\nBest regards,\nAdmin',
-                settings.EMAIL_HOST_USER,
-                [moderator.email],
-                fail_silently=False,
-            )
-
-            return Response({"message": f"Moderator {moderator.email} assigned to client {client.email}."})
-
-        return Response(serializer.errors, status=400)
-
-
-class AssignCommunityManagerToModeratorView(APIView):
-    permission_classes = [AllowAny]  
-
-    def put(self, request, moderator_id):
-        try:
-            
-            moderator = User.objects.get(id=moderator_id, is_moderator=True)
-        except User.DoesNotExist:
-            return Response({"error": "Moderator not found."}, status=404)
-
-        serializer = AssigncommunityManagerstoModeratorsSerializer(data=request.data)
-        if serializer.is_valid():
-            cm_id = serializer.validated_data["cm_id"]
-            try:
-                cm = User.objects.get(id=cm_id, is_community_manager=True)
-            except User.DoesNotExist:
-                return Response({"error": "Community Manager not found."}, status=404)
-
-            
-            moderator.assigned_communitymanagers.add(cm)
-            moderator.save()
-
-            send_mail(
-                'You have been assigned to a moderator',
-                f'Hello {cm.full_name},\n\nYou have been assigned to Moderator {moderator.full_name}. Please review and collaborate.\n\nBest regards,\nAdmin',
-                settings.EMAIL_HOST_USER,
-                [cm.email],
-                fail_silently=False,
-            )
-
-            return Response({"message": f"Community Manager {cm.email} assigned to Moderator {moderator.email}."})
-
-        return Response(serializer.errors, status=400)
 
 class AssignCMToClientView(APIView):
     permission_classes = [IsModeratorOrAdmin]
@@ -574,7 +480,7 @@ class RemoveClientCommunityManagersView(generics.UpdateAPIView):
     queryset = User.objects.filter(is_client=True)
 
     def update(self, request, *args, **kwargs):
-        client = self.get_object()
+        client = self.get_object()  # Get the client object
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         cm_ids_to_remove = serializer.validated_data['community_manager_ids']
@@ -585,20 +491,213 @@ class RemoveClientCommunityManagersView(generics.UpdateAPIView):
         # Filter for the community managers that are currently assigned to the client AND in the list to remove
         cms_to_remove = assigned_cms_to_client.filter(id__in=cm_ids_to_remove)
 
-        if cms_to_remove.count() < len(cm_ids_to_remove):
-            invalid_remove_ids = set(cm_ids_to_remove) - set(cms_to_remove.values_list('id', flat=True))
-            return Response({"error": f"The following community manager IDs are not currently assigned to this client: {list(invalid_remove_ids)}"}, status=status.HTTP_400_BAD_REQUEST)
+        # Check if all provided IDs are valid and assigned to the client
+        invalid_ids = set(cm_ids_to_remove) - set(cms_to_remove.values_list('id', flat=True))
+        if invalid_ids:
+            return Response(
+                {"error": f"The following community manager IDs are not currently assigned to this client: {list(invalid_ids)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         # Remove the specified community managers from the client's assignment
         client.assigned_communitymanagerstoclient.remove(*cms_to_remove)
         client.save()
 
+        # Return the updated client data
         client_serializer = GetUserSerializer(client)
         return Response(client_serializer.data, status=status.HTTP_200_OK)
 
-#delete
+        
+    
+
+class ListUsers(APIView):
+    permission_classes = [IsAdministrator]  # Only authenticated users can access this view
+    def get(self, request):
+        users = User.objects.all()
+        user_data = []
+
+        for user in users:
+            data = {
+                "id": user.id,
+                "full_name": user.full_name,
+                "email": user.email,
+                "phone_number": user.phone_number,
+
+                "is_active": user.is_active,
+                "is_staff": user.is_staff,
+                "roles": [
+                    role
+                    for role, has_role in {
+                        "administrator": user.is_administrator,
+                        "moderator": user.is_moderator,
+                        "community_manager": user.is_community_manager,
+                        "client": user.is_client,
+                    }.items()
+                    if has_role
+                ],
+            }
+
+          
+            if user.is_client and user.assigned_moderator:
+                data["assigned_moderator"] = user.assigned_moderator.full_name
+            else:
+                data["assigned_moderator"] = None
+
+            
+            if user.is_moderator:
+                assigned_cms = user.assigned_communitymanagers.all()
+                data["assigned_communitymanagers"] = ", ".join([cm.full_name for cm in assigned_cms]) if assigned_cms else None
+            else:
+                data["assigned_communitymanagers"] = None
+
+            user_data.append(data)
+
+        return Response(user_data, status=status.HTTP_200_OK)
+
+class AssignedCMsToModeratorView(APIView):
+    permission_classes = [IsModerator]
+
+    def get(self, request):
+        moderator = request.user
+        assigned_cms = User.objects.filter(assigned_moderators=moderator)
+        cm_data = []
+
+        for cm in assigned_cms:
+            data = {
+                "id": cm.id,
+                "full_name": cm.full_name,
+                "email": cm.email,
+                "phone_number": cm.phone_number,
+                "is_active": cm.is_active,
+                "is_staff": cm.is_staff,
+                "roles": [
+                    role
+                    for role, has_role in {
+                        "administrator": cm.is_administrator,
+                        "moderator": cm.is_moderator,
+                        "community_manager": cm.is_community_manager,
+                        "client": cm.is_client,
+                    }.items()
+                    if has_role
+                ],
+                # Add any other relevant CM information you want to display
+            }
+            cm_data.append(data)
+
+        return Response(cm_data, status=status.HTTP_200_OK)
+
+
+
+
+    
+
+class GetUserByIdView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, user_id):
+        try:
+            user = User.objects.get(pk=user_id)
+            data = {
+                "id": user.id,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+                "phone_number": user.phone_number,
+                "email": user.email,
+                "is_staff": user.is_staff,
+                "is_administrator": user.is_administrator,
+                "is_moderator": user.is_moderator,
+                "is_community_manager": user.is_community_manager,
+                "is_client": user.is_client,
+            }
+            
+            # Add related information based on role
+            if user.is_client and user.assigned_moderator:
+                data["assigned_moderator"] = user.assigned_moderator.full_name
+            elif user.is_moderator:
+                assigned_cms = user.assigned_communitymanagers.all()
+                data["assigned_communitymanagers"] = [
+                    {"id": cm.id, "full_name": cm.full_name}
+                    for cm in assigned_cms
+                ] if assigned_cms else []
+            
+            return Response(data, status=status.HTTP_200_OK)
+            
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User not found"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+class AssignModeratorToClientView(APIView):
+    permission_classes = [IsAdministrator]  # <-- Everyone can access this view
+
+    def put(self, request, client_id):
+        try:
+            client = User.objects.get(id=client_id, is_client=True)
+        except User.DoesNotExist:
+            return Response({"error": "Client not found."}, status=404)
+
+        serializer = AssignModeratorSerializer(data=request.data)
+        if serializer.is_valid():
+            moderator_id = serializer.validated_data["moderator_id"]
+            try:
+                moderator = User.objects.get(id=moderator_id, is_moderator=True)
+            except User.DoesNotExist:
+                return Response({"error": "Moderator not found."}, status=404)
+
+            client.assigned_moderator = moderator
+            client.save()
+
+            send_mail(
+                'You have been assigned as a moderator',
+                f'Hello {moderator.full_name},\n\nYou have been assigned as a moderator for client {client.full_name}. Please review the client details and take the necessary actions.\n\nBest regards,\nAdmin',
+                settings.EMAIL_HOST_USER,
+                [moderator.email],
+                fail_silently=False,
+            )
+
+            return Response({"message": f"Moderator {moderator.email} assigned to client {client.email}."})
+
+        return Response(serializer.errors, status=400)
+
+class AssignCommunityManagerToModeratorView(APIView):
+    permission_classes = [IsAdministrator]  
+
+    def put(self, request, moderator_id):
+        try:
+            
+            moderator = User.objects.get(id=moderator_id, is_moderator=True)
+        except User.DoesNotExist:
+            return Response({"error": "Moderator not found."}, status=404)
+
+        serializer = AssigncommunityManagerstoModeratorsSerializer(data=request.data)
+        if serializer.is_valid():
+            cm_id = serializer.validated_data["cm_id"]
+            try:
+                cm = User.objects.get(id=cm_id, is_community_manager=True)
+            except User.DoesNotExist:
+                return Response({"error": "Community Manager not found."}, status=404)
+
+            
+            moderator.assigned_communitymanagers.add(cm)
+            moderator.save()
+
+            send_mail(
+                'You have been assigned to a moderator',
+                f'Hello {cm.full_name},\n\nYou have been assigned to Moderator {moderator.full_name}. Please review and collaborate.\n\nBest regards,\nAdmin',
+                settings.EMAIL_HOST_USER,
+                [cm.email],
+                fail_silently=False,
+            )
+
+            return Response({"message": f"Community Manager {cm.email} assigned to Moderator {moderator.email}."})
+
+        return Response(serializer.errors, status=400)
+
+
+    
 class AdminDeleteUserView(APIView):
-    permission_classes = [AllowAny]  
+    permission_classes = [IsAdministrator]  # Only admin can delete users
 
     def delete(self, request, user_id):
         try:
@@ -613,9 +712,4 @@ class AdminDeleteUserView(APIView):
             return Response({"error": "User does not exist"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": f"Error deleting user: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-class IsAdministrator(BasePermission):
-    """Allows access only to administrators."""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.is_administrator
 
