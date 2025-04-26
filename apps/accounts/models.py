@@ -50,6 +50,12 @@ class User(AbstractUser):
     limit_choices_to={'is_community_manager': True},
     symmetrical=False  
     )
+    assigned_communitymanagerstoclient = models.ManyToManyField(
+    'self',
+    blank=True,
+    symmetrical=False,
+    related_name='assigned_moderator_for_client',
+    limit_choices_to={'is_cm': True})
 
 
     username = None

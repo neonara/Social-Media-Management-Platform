@@ -7,9 +7,11 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from .utils.password_utils import generate_password
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.text import slugify
 from django.core.mail import send_mail
 from django.conf import settings
 
+#login logout
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155, min_length=6)
     password = serializers.CharField(max_length=68, write_only=True)
@@ -74,6 +76,7 @@ class LogoutUserSerializer(serializers.Serializer):
         except Exception as e:
             raise serializers.ValidationError("Invalid token")
 
+#create
 class CreateUserSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155)
     role = serializers.ChoiceField(choices=[
@@ -149,16 +152,76 @@ class CreateUserSerializer(serializers.ModelSerializer):
                 print(f"DEV CREDENTIALS - Email: {email}, Password: {password}")
 
         return user
-    
-class UserDeleteSerializer(serializers.ModelSerializer):
+
+class CreateCMSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField(max_length=155)
+
     class Meta:
         model = User
-        fields = []  # We don't need to serialize any fields for deletion
+        fields = ['email']
 
-    def delete(self, instance):
-        instance.delete()
-        return instance
+    def validate_email(self, value):
+        """
+        Check if the email already exists in the system.
+        """
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
 
+    def create(self, validated_data):
+        email = validated_data['email']
+        role = 'community_manager'  # Explicitly set the role
+        password = generate_password()
+
+        # Generate a unique username based on the email
+        base_username = slugify(email.split('@')[0])
+        username = base_username
+        suffix = 1
+        while User.objects.filter(username=username).exists():
+            username = f"{base_username}-{suffix}"
+            suffix += 1
+
+        self.password = password
+
+        user = User.objects.create_user(
+            email=email,
+            password=password,
+            username=username,
+            is_active=True,
+            is_verified=True
+        )
+
+        user.is_community_manager = True
+        user.save()
+
+        reset_link = f"{settings.FRONTEND_URL}/first-reset-password?email={email}"
+        email_body = f"""
+        Your account has been created.
+
+        Email: {email}
+        Temporary Password: {password}
+        Role: {role.replace('_', ' ').title()}
+
+        Please change your password by visiting:
+        {reset_link}
+        """
+
+        try:
+            send_mail(
+                'Account Created - Social Media Management Platform',
+                email_body,
+                "achref.maarfi0@gmail.com",
+                [email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            print(f"Email sending failed: {e}")
+            if hasattr(settings, 'DEBUG_EMAIL') and settings.DEBUG_EMAIL:
+                print(f"DEV CREDENTIALS - Email: {email}, Password: {password}")
+
+        return user
+
+#password
 class FirstTimePasswordChangeSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
     password = serializers.CharField(required=True)
@@ -206,11 +269,10 @@ class SetNewPasswordSerializer(serializers.Serializer):
 
         try:
             
-            user = User.objects.get(id=uid)
-
-          
-            if not PasswordResetTokenGenerator().check_token(user, token):
-                raise AuthenticationFailed("Invalid token", 401)
+            uid = urlsafe_base64_decode(attrs.get('id'))
+            user = User.objects.get(pk=uid)
+            if not PasswordResetTokenGenerator().check_token(user, attrs.get('token')):
+                 raise AuthenticationFailed("Invalid token", 401)
 
            
             user.set_password(password)
@@ -248,7 +310,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         user = User.objects.get(email=email)
         token = PasswordResetTokenGenerator().make_token(user)
         uid = urlsafe_base64_encode(force_bytes(user.pk))
-        reset_link = f"http://127.0.0.1:8000/api/auth/reset-password-confirm/{uid}/{token}/"
+        reset_link = f"http://localhost:3000/reset-password-confirm/{uid}/{token}/"
 
         send_mail(
             "Password Reset Request",
@@ -257,11 +319,11 @@ class PasswordResetRequestSerializer(serializers.Serializer):
             [email],
             fail_silently=False,
         )
-
 class PasswordResetConfirmSerializer(serializers.Serializer):
     uid = serializers.CharField()
     token = serializers.CharField()
     new_password = serializers.CharField(write_only=True, min_length=6)
+    confirm_password = serializers.CharField(write_only=True, min_length=6)
 
     def validate(self, data):
         try:
@@ -270,6 +332,9 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
             if not PasswordResetTokenGenerator().check_token(user, data["token"]):
                 raise serializers.ValidationError("Invalid or expired token.")
+
+            if data["new_password"] != data["confirm_password"]:
+                raise serializers.ValidationError("Passwords do not match.")
 
         except (User.DoesNotExist, ValueError, TypeError):
             raise serializers.ValidationError("Invalid user or token.")
@@ -281,6 +346,7 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         user.set_password(self.validated_data["new_password"])
         user.save()
 
+#assign
 class AssignModeratorSerializer(serializers.Serializer):
     moderator_id = serializers.IntegerField()
 
@@ -300,12 +366,32 @@ class AssigncommunityManagerstoModeratorsSerializer(serializers.Serializer):
         except User.DoesNotExist:
             raise serializers.ValidationError("Community Manager does not exist or is not a valid CM.")
         return value
+   
+class AssignCMToClientSerializer(serializers.Serializer):
+    cm_id = serializers.IntegerField(required=True)
 
-class UserUpdateSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, required=False)
-    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    full_name = serializers.CharField(required=False)
+    def validate_cm_id(self, value):
+        try:
+            User.objects.get(id=value, is_community_manager=True)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("A community manager with this ID does not exist.")
+        return value
+    
+class RemoveCMsFromClientSerializer(serializers.Serializer):
+    community_manager_ids = serializers.ListField(child=serializers.IntegerField(), required=True)
 
+    def validate_community_manager_ids(self, values):
+        if not values:
+            raise serializers.ValidationError("Please provide a list of community manager IDs to remove.")
+        for cm_id in values:
+            try:
+                User.objects.get(id=cm_id, is_community_manager=True)
+            except User.DoesNotExist:
+                raise serializers.ValidationError(f"Community manager with ID {cm_id} not found.")
+        return values
+    
+#get
+class GetUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['email', 'password', 'is_administrator', 'is_moderator', 'is_community_manager', 
