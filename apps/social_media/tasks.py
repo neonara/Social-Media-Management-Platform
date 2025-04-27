@@ -1,7 +1,7 @@
 from celery import shared_task
 
 from apps.content.models import Post
-from services import publish_to_facebook, publish_to_instagram, publish_to_linkedin
+from .services import publish_to_facebook, publish_to_instagram, publish_to_linkedin
 
 @shared_task
 def publish_scheduled_post(post_id):

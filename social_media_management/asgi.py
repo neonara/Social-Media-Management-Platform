@@ -2,8 +2,9 @@ import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
-from apps.accounts.routing import websocket_urlpatterns
 
+import apps.accounts.routing
+import apps.notifications.routing
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'social_media_management.settings')
 
@@ -11,7 +12,8 @@ application = ProtocolTypeRouter({
     "http": get_asgi_application(),
     "websocket": AuthMiddlewareStack(
         URLRouter(
-            websocket_urlpatterns
+            apps.accounts.routing.websocket_urlpatterns,
+            apps.notifications.routing.websocket_urlpatterns,
         )
     ),
 })

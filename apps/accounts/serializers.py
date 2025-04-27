@@ -296,8 +296,7 @@ class AssigncommunityManagerstoModeratorsSerializer(serializers.Serializer):
 class GetUserSerializer(serializers.ModelSerializer):
     class Meta:
         model=User
-        fields = ['id', 'email', 'is_administrator', 'is_moderator', 'is_community_manager', 
-                  'is_client', 'is_verified', 'phone_number', 'first_name', 'last_name', 'full_name']
+        fields = ['id', 'full_name', 'first_name', 'last_name', 'email', 'is_administrator', 'is_moderator', 'is_community_manager', 'is_client', 'is_verified', 'phone_number']
         
         extra_kwargs = {
             'user_image': {'required': False},

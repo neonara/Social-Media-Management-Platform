@@ -1,6 +1,7 @@
 from django.db import models
 
-from apps.accounts.models import User, SocialPage  # Assuming User is in accounts
+from apps.accounts.models import User
+from apps.social_media.models import SocialPage  # Assuming User is in accounts
 
 class Post(models.Model):
     title = models.CharField(max_length=255, blank=True, null=True)

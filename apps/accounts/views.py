@@ -11,6 +11,8 @@ from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, GetUserSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer
+from .services import get_cached_user_data  # Import the caching service
+from django.core.cache import cache
 
 class IsAdministrator(BasePermission):
     """Allows access only to administrators."""
@@ -258,6 +260,8 @@ class UpdateUserView(UpdateAPIView):
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
 
+        cache.delete(f"user_meta:{request.user.id}")
+        
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class GetUserByIdView(APIView):
@@ -429,5 +433,5 @@ class FetchEmails(APIView):
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
-        serializer = GetUserSerializer(request.user)
-        return Response(serializer.data)
+        user_data = get_cached_user_data(request.user)  # Use cached data
+        return Response(user_data)

@@ -4,9 +4,9 @@ from rest_framework import status
 from rest_framework.views import APIView
 
 from apps.content.models import Post
-from services import publish_to_facebook,publish_to_instagram, publish_to_linkedin, get_facebook_auth_url, exchange_code_for_access_token,extend_to_long_lived_token, fetch_user_pages
+from .services import publish_to_facebook,publish_to_instagram, publish_to_linkedin, get_facebook_auth_url, exchange_code_for_access_token,extend_to_long_lived_token, fetch_user_pages
 from django.shortcuts import redirect
-from models import SocialPage
+from .models import SocialPage
 
 class PublishToFacebookView(APIView):
     permission_classes = [IsAuthenticated]
