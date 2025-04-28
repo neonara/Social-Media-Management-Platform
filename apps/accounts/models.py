@@ -21,8 +21,7 @@ class CustomUserManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 class User(AbstractUser):
-    
-
+    username = None  # Remove the username field
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     first_name = models.CharField(max_length=25, blank=True, null=True)
@@ -51,6 +50,12 @@ class User(AbstractUser):
         limit_choices_to={'is_community_manager': True},
         symmetrical=False
     )
+    assigned_communitymanagerstoclient = models.ManyToManyField(
+    'self',
+    blank=True,
+    symmetrical=False,
+    related_name='assigned_moderator_for_client',
+    limit_choices_to={'is_cm': True})
 
     
     USERNAME_FIELD = 'email'
