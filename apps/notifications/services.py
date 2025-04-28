@@ -1,6 +1,6 @@
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-from notifications.models import Notification
+from apps.notifications.models import Notification
 
 def notify_user(user, title, message, url="", type="general"):
     Notification.objects.create(
