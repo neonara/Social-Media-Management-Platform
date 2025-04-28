@@ -11,6 +11,7 @@ def get_cached_user_data(user):
 
     if data is None:
         data = {
+            "id": user.id,
             "full_name": user.full_name,
             "first_name": user.first_name,
             "last_name": user.last_name,
@@ -27,6 +28,7 @@ def get_cached_user_data(user):
             cache.set(key, data, timeout=60 * 5)
         except (InvalidCacheBackendError, ConnectionError):
             return  {
+            "id": user.id,
             "full_name": user.full_name,
             "first_name": user.first_name,
             "last_name": user.last_name,

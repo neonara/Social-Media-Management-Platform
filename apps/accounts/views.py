@@ -15,7 +15,7 @@ from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSer
 
 from .services import get_cached_user_data  # Import the caching service
 from django.core.cache import cache
-
+from apps.notifications.services import notify_user  # Import the notification service
 
 
 #permissions
@@ -401,6 +401,7 @@ class PasswordResetConfirmView(generics.GenericAPIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 #update
+
 class UpdateUserView(UpdateAPIView):
     queryset = User.objects.all()  # Add this line ✅
     serializer_class = GetUserSerializer
@@ -425,17 +426,15 @@ class UpdateUserView(UpdateAPIView):
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
 
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
+        # Notify the user about the profile update
+        notify_user(
+            user=instance,
+            title="Profile Updated",
+            message="Your profile has been successfully updated.",
+            type="profile_update"
+        )
 
         cache.delete(f"user_meta:{request.user.id}")
-        
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 class AssignCMToClientView(APIView):
