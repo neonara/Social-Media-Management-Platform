@@ -32,7 +32,7 @@ class Post(models.Model):
     description = models.TextField(blank=True)
     scheduled_for = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
-    creator = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='posts')
+    creator = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='posts', null=True)
     media = models.ManyToManyField(Media, blank=True, related_name='posts')
     platforms = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
