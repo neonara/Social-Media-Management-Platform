@@ -3,6 +3,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = '/media/'
 # Load environment variables from .env file
 load_dotenv()
 
@@ -22,13 +26,13 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(','
 
 INSTALLED_APPS = [
     'apps.accounts',         
-    # 'apps.content',           
+    'apps.content',           
     # 'apps.planning',          
     # 'apps.analytics',        
-    # 'apps.notifications',    
+    'apps.notifications',    
     # 'apps.ai_integration',   
-    # 'apps.social_media',    
-    # 'apps.collaboration',
+    'apps.social_media',    
+    'apps.collaboration',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -38,6 +42,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'channels'
 ]
 
 MIDDLEWARE = [
@@ -51,15 +56,24 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# CORS settings
-CORS_ALLOW_ALL_ORIGINS = True  # For development only
-CORS_ALLOW_CREDENTIALS = True
+# CSRF Settings
+CSRF_COOKIE_SAMESITE = 'Lax'  # Use 'None' if using HTTPS
+CSRF_COOKIE_SECURE = False    # Set to True in production with HTTPS
+CSRF_COOKIE_HTTPONLY = False  # Must be False to allow access via JavaScript
+
+
+# CORS Settings
+CORS_ALLOW_ALL_ORIGINS = False  # Restrict to specific origins in production
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # Add your Next.js frontend URL
+]
+CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be sent with requests
 
 # # In production, replace with specific origins:
-# CORS_ALLOWED_ORIGINS = [
-#     "http://localhost:3000",
-# ]
-
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+]
+CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
 # Allow all needed HTTP methods
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -68,6 +82,25 @@ CORS_ALLOW_METHODS = [
     'PATCH',
     'POST',
     'PUT',
+]
+
+# Allow all headers for CORS
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# CSRF Trusted Origins
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
 ]
 
 ROOT_URLCONF = 'social_media_management.urls'
@@ -89,6 +122,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'social_media_management.wsgi.application'
+ASGI_APPLICATION = 'social_media_management.asgi.application'
 
 
 # Database configuration
@@ -175,3 +209,40 @@ DEBUG_EMAIL = DEBUG
 
 # Custom user model
 AUTH_USER_MODEL = 'accounts.User'
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",  # or use redis://redis:6379/1 in Docker-only networks
+        # "LOCATION": "redis://host.docker.internal:6379/1",  # or use redis://redis:6379/1 in Docker-only networks
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+
+SESSION_ENGINE =  "django.contrib.sessions.backends.db"
+SESSION_CACHE_ALIAS = "default"
+
+SESSION_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = False  # Set to True in production
+
+FACEBOOK_APP_ID = os.getenv("FACEBOOK_APP_ID")
+FACEBOOK_APP_SECRET = os.getenv("FACEBOOK_APP_SECRET")
+FACEBOOK_REDIRECT_URI = os.getenv("FACEBOOK_REDIRECT_URI")
+FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic"
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+            }
+        }
+    }
+
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'  # or use 'host.docker.internal' if Redis is in Docker
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'  # or your local timezone

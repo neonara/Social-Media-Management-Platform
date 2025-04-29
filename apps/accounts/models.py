@@ -11,47 +11,65 @@ class CustomUserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-   
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
-        if extra_fields.get("is_staff") is not True:
+        if not extra_fields.get("is_staff"):
             raise ValueError("Superuser must have is_staff=True.")
-        if extra_fields.get("is_superuser") is not True:
+        if not extra_fields.get("is_superuser"):
             raise ValueError("Superuser must have is_superuser=True.")
-        
-        return self.create_user(email=email, password=password, **extra_fields)
+        return self.create_user(email, password, **extra_fields)
 
 class User(AbstractUser):
+    username = None  # Remove the username field
     email = models.EmailField(unique=True)
-    is_verified = models.BooleanField(default=False)
+    phone_number = models.CharField(max_length=20, blank=True, null=True)
+    first_name = models.CharField(max_length=25, blank=True, null=True)
+    last_name = models.CharField(max_length=25, blank=True, null=True)
+    user_image = models.FileField(upload_to='accounts/images/', blank=True, null=True)
+
+    is_verified = models.BooleanField(default=True)
     is_administrator = models.BooleanField(default=False)
     is_moderator = models.BooleanField(default=False)
     is_community_manager = models.BooleanField(default=False)
     is_client = models.BooleanField(default=False)
+    is_superadministrator = models.BooleanField(default=False)
+
     assigned_moderator = models.ForeignKey(
         'self',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='assigned_cms',
-        limit_choices_to={'is_moderator': True}
+        related_name='clients_assigned',
+        limit_choices_to={'is_moderator': True},
+        help_text="The Moderator assigned to this Client"
     )
-    assigned_communitymanagers = models.ForeignKey(
+    assigned_communitymanagers = models.ManyToManyField(
         'self',
-        on_delete=models.SET_NULL,
-        null=True,
         blank=True,
         related_name='assigned_moderators',
-        limit_choices_to={'is_community_manager': True}
+        limit_choices_to={'is_community_manager': True},
+        symmetrical=False
     )
-    
-    username = None
+    assigned_communitymanagerstoclient = models.ManyToManyField(
+    'self',
+    blank=True,
+    symmetrical=False,
+    related_name='assigned_moderator_for_client',
+    limit_choices_to={'is_cm': True})
+
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name']
     
+
+
+
     objects = CustomUserManager()
 
     def __str__(self):
         return self.email
+
+    @property
+    def full_name(self):
+        return f"{self.first_name or ''} {self.last_name or ''}".strip()
