@@ -33,6 +33,7 @@ class User(AbstractUser):
     is_moderator = models.BooleanField(default=False)
     is_community_manager = models.BooleanField(default=False)
     is_client = models.BooleanField(default=False)
+    is_superadministrator = models.BooleanField(default=False)
 
     assigned_moderator = models.ForeignKey(
         'self',

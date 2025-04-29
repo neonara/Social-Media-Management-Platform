@@ -3,6 +3,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = '/media/'
 # Load environment variables from .env file
 load_dotenv()
 
@@ -21,13 +25,13 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(','
 # Application definition
 
 INSTALLED_APPS = [
-    'apps.accounts',         
-    # 'apps.content',           
-    # 'apps.planning',          
-    # 'apps.analytics',        
-    # 'apps.notifications',    
-    # 'apps.ai_integration',   
-    # 'apps.social_media',    
+    'apps.accounts',
+    'apps.content',
+    # 'apps.planning',
+    # 'apps.analytics',
+    # 'apps.notifications',
+    # 'apps.ai_integration',
+    # 'apps.social_media',
     # 'apps.collaboration',
     'rest_framework',
     'rest_framework_simplejwt',
@@ -52,14 +56,14 @@ MIDDLEWARE = [
 ]
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = True  # For development only
+# CORS_ALLOW_ALL_ORIGINS = True  # For development only
 CORS_ALLOW_CREDENTIALS = True
 
 # # In production, replace with specific origins:
 CORS_ALLOWED_ORIGINS = [
-     "http://localhost:3000",
+    "http://localhost:3000",
 ]
-
+CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
 # Allow all needed HTTP methods
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -68,6 +72,25 @@ CORS_ALLOW_METHODS = [
     'PATCH',
     'POST',
     'PUT',
+]
+
+# Allow all headers for CORS
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# CSRF Trusted Origins
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
 ]
 
 ROOT_URLCONF = 'social_media_management.urls'
