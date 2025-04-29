@@ -31,6 +31,7 @@ urlpatterns = [
     path('moderators/<int:moderator_id>/community-manager/<int:cm_id>/remove/', RemoveCommunityManagerFromModeratorView.as_view()), 
     
     #fetched assignement
+     path('user/<int:user_id>/', GetUserByIdView.as_view(), name='user-detail'),
     path('moderators/assigned-cms/', AssignedModeratorCommunityManagersView.as_view(), name='moderator-assigned-cms'),
     path('moderators/assignedClients/', AssignedModeratorClientsView.as_view()),
     path('clients/<int:client_id>/assigned-cms/', ClientAssignedCommunityManagersView.as_view(), name='client_assigned_cms'),
@@ -38,5 +39,6 @@ urlpatterns = [
     path('clients/<int:client_id>/eligible-cms/', EligibleCMsForClient.as_view(), name='eligible-cms-for-client'),
     
     path('moderators/createCM/', CreateCMView.as_view(), name='create-community-manager'),
+    path('user/profile/', CurrentUserView.as_view(), name='current_user'),
 
 ]

@@ -29,6 +29,10 @@ class IsModerator(BasePermission):
     def has_permission(self, request, view):
         return request.user.is_authenticated and request.user.is_moderator
 
+class IsAdminOrSuperAdmin(BasePermission):
+    """Allows access only to moderators or administrators."""
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and (request.user.is_superadministrator or request.user.is_administrator)
 
 class IsModeratorOrAdmin(BasePermission):
     """Allows access only to moderators or administrators."""
@@ -75,10 +79,10 @@ class GetUserByIdView(APIView):
             )
 
 class FetchEmails(APIView):
-    permission_classes = [IsAuthenticated, IsAdministrator]  # Only admin can fetch emails
+    permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]  # Only admin can fetch emails
 
     def get(self, request):
-        # No need for additional check since IsAdministrator handles it
+        # No need for additional check since IsAdminOrSuperAdmin handles it
         users = User.objects.all()
         user_emails = [{"email": user.email} for user in users]
         return Response(user_emails, status=200)
@@ -403,12 +407,19 @@ class PasswordResetConfirmView(generics.GenericAPIView):
 #update
 
 class UpdateUserView(UpdateAPIView):
-    queryset = User.objects.all()  # Add this line ✅
+    queryset = User.objects.all()
     serializer_class = GetUserSerializer
     permission_classes = [IsAuthenticated]
+    lookup_field = 'id'  # This matches your URL pattern
 
     def get_object(self):
-        return self.request.user
+        """
+        Ensure users can only update their own profile
+        """
+        obj = super().get_object()  # Gets user based on URL ID
+        if obj != self.request.user:
+            raise PermissionDenied("You can only update your own profile")
+        return obj 
 
     def update(self, request, *args, **kwargs):
         restricted_fields = {
@@ -416,9 +427,14 @@ class UpdateUserView(UpdateAPIView):
             'is_client', 'is_staff', 'is_supplier', 'is_active',
             'is_superuser', 'is_verified'
         }
+        
+        # Check for restricted fields
         for field in restricted_fields:
             if field in request.data:
-                raise PermissionDenied(f"You are not allowed to modify the '{field}' field.")
+                raise PermissionDenied(
+                    f"You are not allowed to modify the '{field}' field.",
+                    code=status.HTTP_403_FORBIDDEN
+                )
 
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
@@ -437,6 +453,7 @@ class UpdateUserView(UpdateAPIView):
         cache.delete(f"user_meta:{request.user.id}")
         return Response(serializer.data, status=status.HTTP_200_OK)
     
+
 class AssignCMToClientView(APIView):
     permission_classes = [IsModeratorOrAdmin]
 
@@ -470,7 +487,7 @@ class AssignCMToClientView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class RemoveCommunityManagerFromModeratorView(APIView):
-    permission_classes = [IsAdministrator]
+    permission_classes = [IsAdminOrSuperAdmin]
 
     def delete(self, request, moderator_id, cm_id):
         try:
@@ -496,7 +513,7 @@ class RemoveCommunityManagerFromModeratorView(APIView):
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
         
 class RemoveModeratorFromClientView(APIView):
-    permission_classes = [IsAdministrator]
+    permission_classes = [IsAdminOrSuperAdmin]
 
     def delete(self, request, client_id):
         try:
@@ -554,7 +571,7 @@ class RemoveClientCommunityManagersView(generics.UpdateAPIView):
     
 
 class ListUsers(APIView):
-    permission_classes = [IsAdministrator]  # Only authenticated users can access this view
+    permission_classes = [IsAdminOrSuperAdmin]  # Only authenticated users can access this view
     def get(self, request):
         users = User.objects.all()
         user_data = []
@@ -635,6 +652,7 @@ class AssignedCMsToModeratorView(APIView):
     
 
 class GetUserByIdView(APIView):
+    
     permission_classes = [IsAuthenticated]
     
     def get(self, request, user_id):
@@ -672,7 +690,7 @@ class GetUserByIdView(APIView):
             )
 
 class AssignModeratorToClientView(APIView):
-    permission_classes = [IsAdministrator]  # <-- Everyone can access this view
+    permission_classes = [IsAdminOrSuperAdmin]  # <-- Everyone can access this view
 
     def put(self, request, client_id):
         try:
@@ -704,7 +722,7 @@ class AssignModeratorToClientView(APIView):
         return Response(serializer.errors, status=400)
 
 class AssignCommunityManagerToModeratorView(APIView):
-    permission_classes = [IsAdministrator]  
+    permission_classes = [IsAdminOrSuperAdmin]  
 
     def put(self, request, moderator_id):
         try:
@@ -775,31 +793,41 @@ class RemoveModeratorFromClientView(APIView):
 
     
 class AdminDeleteUserView(APIView):
-    permission_classes = [IsAdministrator]  # Only admin can delete users
+    permission_classes = [IsAdminOrSuperAdmin]  # Only administrators or superadministrators can access this view
 
     def delete(self, request, user_id):
         try:
-            user = User.objects.get(pk=user_id)
-            email = user.email  # Store email before deletion for the response message
-            user.delete()
+            user_to_delete = User.objects.get(pk=user_id)
+
+            # Prevent administrators and superadministrators from deleting themselves
+            if user_to_delete == request.user:
+                return Response(
+                    {"error": "You cannot delete yourself."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Check if the user to be deleted is an administrator
+            if user_to_delete.is_administrator:
+                # Only the superadministrator can delete other administrators
+                if not request.user.is_superadministrator:
+                    return Response(
+                        {"error": "Only the superadministrator can delete other administrators."},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+
+            # Proceed with deletion
+            email = user_to_delete.email  # Store email before deletion for the response message
+            user_to_delete.delete()
             return Response(
                 {'message': f'User with ID {user_id} (email: {email}) has been deleted successfully'},
-                status=status.HTTP_200_OK  # Change to 200 OK so message is displayed
+                status=status.HTTP_200_OK
             )
+
         except User.DoesNotExist:
             return Response({"error": "User does not exist"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": f"Error deleting user: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-class FetchEmails(APIView):
-    permission_classes = [IsAuthenticated, IsAdministrator]  # Only admin can fetch emails
-
-    def get(self, request):
-        # No need for additional check since IsAdministrator handles it
-        users = User.objects.all()
-        user_emails = [{"email": user.email} for user in users]
-        return Response(user_emails, status=200)
-    
+ 
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):

@@ -24,3 +24,12 @@ class IsClient(permissions.BasePermission):
     """Allows access only to clients."""
     def has_permission(self, request):
         return request.user.is_authenticated and request.user.is_client
+    
+class IsCommunityManagerOrModerator(permissions.BasePermission):
+    """
+    Custom permission to allow only Community Managers or Moderators to access certain views.
+    """
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and (
+            request.user.is_community_manager or request.user.is_moderator
+        )
