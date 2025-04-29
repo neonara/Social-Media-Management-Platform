@@ -26,7 +26,7 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     first_name = models.CharField(max_length=25, blank=True, null=True)
     last_name = models.CharField(max_length=25, blank=True, null=True)
-    user_image = models.ImageField(upload_to='accounts/images/', blank=True, null=True)
+    user_image = models.FileField(upload_to='accounts/images/', blank=True, null=True)
 
     is_verified = models.BooleanField(default=True)
     is_administrator = models.BooleanField(default=False)
