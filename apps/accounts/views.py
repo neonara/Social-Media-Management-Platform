@@ -17,6 +17,8 @@ from .services import get_cached_user_data  # Import the caching service
 from django.core.cache import cache
 from apps.notifications.services import notify_user  # Import the notification service
 
+from django.contrib.auth import get_user_model
+User = get_user_model() 
 
 #permissions
 class IsAdministrator(BasePermission):
@@ -37,7 +39,7 @@ class IsAdminOrSuperAdmin(BasePermission):
 class IsModeratorOrAdmin(BasePermission):
     """Allows access only to moderators or administrators."""
     def has_permission(self, request, view):
-        return request.user.is_authenticated and (request.user.is_moderator or request.user.is_administrator)
+        return request.user.is_authenticated and (request.user.is_moderator or request.user.is_administrator or request.user.is_superadministrator )
 
 
 class GetUserByIdView(APIView):
@@ -303,7 +305,7 @@ class UserLoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class LogoutUserView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = []
 
     def post(self, request):
         refresh_token = request.COOKIES.get('refresh_token')  # Read from cookies
@@ -475,7 +477,7 @@ class AssignCMToClientView(APIView):
                 return Response({"error": "Community Manager not found."}, status=status.HTTP_404_NOT_FOUND)
 
             # Check if the community manager is assigned to the client's moderator
-            if community_manager not in client.assigned_moderator.assigned_communitymanagers.all():
+            if not client.assigned_moderator.assigned_communitymanagers.filter(id=community_manager.id).exists():
                 return Response({"error": "This community manager is not assigned to the client's moderator."}, status=status.HTTP_400_BAD_REQUEST)
 
             # Assign the community manager to the client
@@ -485,7 +487,6 @@ class AssignCMToClientView(APIView):
             return Response({"message": f"Community Manager {community_manager.email} assigned to client {client.email}."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 class RemoveCommunityManagerFromModeratorView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 
@@ -535,7 +536,7 @@ class RemoveModeratorFromClientView(APIView):
 
 class RemoveClientCommunityManagersView(generics.UpdateAPIView):
     serializer_class = RemoveCMsFromClientSerializer
-    permission_classes = [IsModeratorOrAdmin]
+    permission_classes = [IsAdminOrSuperAdmin]
     lookup_url_kwarg = 'client_id'
     queryset = User.objects.filter(is_client=True)
 
@@ -567,7 +568,36 @@ class RemoveClientCommunityManagersView(generics.UpdateAPIView):
         client_serializer = GetUserSerializer(client)
         return Response(client_serializer.data, status=status.HTTP_200_OK)
 
-        
+
+
+class AssignedClientsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # Check if the user is a Community Manager or Moderator
+        if user.is_community_manager:
+            # Get clients assigned to the Community Manager
+            clients = User.objects.filter(
+                assigned_communitymanagerstoclient=user,
+                is_client=True
+            )
+        elif user.is_moderator:
+            # Get clients assigned to the Moderator
+            clients = User.objects.filter(
+                assigned_moderator=user,
+                is_client=True
+            )
+        else:
+            return Response(
+                {"error": "You do not have permission to access this resource."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Serialize the clients
+        client_data = [{"id": client.id, "name": client.full_name or client.email} for client in clients]
+        return Response(client_data, status=status.HTTP_200_OK)  
     
 
 class ListUsers(APIView):
@@ -756,40 +786,41 @@ class AssignCommunityManagerToModeratorView(APIView):
         return Response(serializer.errors, status=400)
 
 class RemoveCommunityManagerFromModeratorView(APIView):
-     permission_classes = [IsAdministrator]  
-     def delete(self, request, moderator_id, cm_id):
+    permission_classes = [IsAdminOrSuperAdmin]
+
+    def delete(self, request, moderator_id, cm_id):
         try:
-           
             moderator = User.objects.get(id=moderator_id, is_moderator=True)
-            cm = User.objects.get(id=cm_id, is_community_manager=True)
-            
-            
-            if cm in moderator.assigned_communitymanagers.all():
-                moderator.assigned_communitymanagers.remove(cm)
-                return Response({"message": "Community Manager unassigned from Moderator."}, status=status.HTTP_200_OK)
+            cm_to_remove = User.objects.get(id=cm_id, is_community_manager=True)
+
+            if cm_to_remove in moderator.assigned_communitymanagers.all():
+                moderator.assigned_communitymanagers.remove(cm_to_remove)
+
+                # Do not modify the posts; they remain associated with the client
+                return Response({"message": "Community Manager unassigned from Moderator. Posts remain associated with the client."}, status=status.HTTP_200_OK)
             else:
                 return Response({"error": "This Community Manager is not assigned to this Moderator."}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
             return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
         
 class RemoveModeratorFromClientView(APIView):
-    permission_classes = [IsAdministrator]  
+    permission_classes = [IsAdminOrSuperAdmin]
+
     def delete(self, request, client_id):
         try:
-            
             client = User.objects.get(id=client_id, is_client=True)
-            
-            
+
             if client.assigned_moderator is None:
                 return Response({"message": "No moderator assigned to this client."}, status=status.HTTP_400_BAD_REQUEST)
 
-           
+            # Unassign the moderator
             client.assigned_moderator = None
+
+            # Do not modify the posts; they remain associated with the client
             client.save()
-            return Response({"message": "Moderator unassigned from client."}, status=status.HTTP_200_OK)
+            return Response({"message": "Moderator unassigned from client. Posts remain associated with the client."}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({"error": "Client not found."}, status=status.HTTP_404_NOT_FOUND)
-
 
     
 class AdminDeleteUserView(APIView):

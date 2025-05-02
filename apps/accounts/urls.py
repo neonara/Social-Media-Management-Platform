@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import AssignCommunityManagerToModeratorView ,CurrentUserView,FetchEmails, AssignModeratorToClientView, RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView, ClientAssignedCommunityManagersView, EligibleCMsForClient, RemoveClientCommunityManagersView, AssignedModeratorClientsView, AssignCMToClientView, CreateCMView, AssignedModeratorCommunityManagersView  
+from .views import AssignedClientsView, AssignCommunityManagerToModeratorView ,CurrentUserView,FetchEmails, AssignModeratorToClientView, RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView, ClientAssignedCommunityManagersView, EligibleCMsForClient, RemoveClientCommunityManagersView, AssignedModeratorClientsView, AssignCMToClientView, CreateCMView, AssignedModeratorCommunityManagersView  
 
 urlpatterns = [
     # Authentication URLs
@@ -37,6 +37,7 @@ urlpatterns = [
     path('clients/<int:client_id>/assigned-cms/', ClientAssignedCommunityManagersView.as_view(), name='client_assigned_cms'),
      
     path('clients/<int:client_id>/eligible-cms/', EligibleCMsForClient.as_view(), name='eligible-cms-for-client'),
+    path('clients/assigned/', AssignedClientsView.as_view(), name='assigned-clients'),
     
     path('moderators/createCM/', CreateCMView.as_view(), name='create-community-manager'),
     path('user/profile/', CurrentUserView.as_view(), name='current_user'),

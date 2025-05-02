@@ -18,7 +18,7 @@ class UserLoginSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(max_length=255, read_only=True)
     access_token = serializers.CharField(max_length=255, read_only=True)
     refresh_token = serializers.CharField(max_length=255, read_only=True)
-
+ 
     class Meta:
         model = User
         fields = [

@@ -9,6 +9,7 @@ class Media(models.Model):
         ('video', 'Video'),
         ('document', 'Document'),
     ]
+    
 
     file = models.FileField(upload_to='media/')
     name = models.CharField(max_length=255, blank=True)
@@ -23,6 +24,7 @@ class Post(models.Model):
     STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('pending', 'Pending'),
+        ('rejected', 'Rejected'),
         ('scheduled', 'Scheduled'),
         ('published', 'Published'),
         ('failed', 'Failed'),
@@ -65,3 +67,15 @@ class Post(models.Model):
     
     class Meta:
         ordering = ["-created_at"]
+        
+    def is_user_assigned(self, user):
+        """
+        Check if the given user is assigned to the post creator.
+        """
+        if self.creator == user:
+            return True
+        if user in self.creator.assigned_communitymanagers.all():
+            return True
+        if user == self.creator.assigned_moderator:
+            return True
+        return False
