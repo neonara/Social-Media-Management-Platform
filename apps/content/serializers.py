@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+#media
 class MediaSerializer(serializers.ModelSerializer):
     file_type = serializers.CharField(source='type', read_only=True)
     
@@ -21,7 +22,7 @@ class MediaSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.file.url)
         return obj.file.url
 
-
+#post
 class PostSerializer(serializers.ModelSerializer):
     media = MediaSerializer(many=True, required=False, read_only=True)
     media_files = serializers.ListField(
@@ -41,30 +42,25 @@ class PostSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True
     )
-
+    last_edited_by = serializers.StringRelatedField(read_only=True)
     class Meta:
         model = Post
         fields = [
             'id', 'title', 'description', 'scheduled_for', 'status',
-            'creator', 'media', 'media_files', 'platforms', 'hashtags', 'client'
+            'creator', 'media', 'media_files', 'platforms', 'hashtags', 'client','last_edited_by'
         ]
-        read_only_fields = ['id', 'creator', 'media', 'status']
+        read_only_fields = ['id', 'creator', 'media','last_edited_by']
 
     def create(self, validated_data):
         media_files = validated_data.pop('media_files', [])
         hashtags = validated_data.pop('hashtags', [])
-
-        # Append hashtags to the description
         if hashtags:
-            hashtag_string = ' '.join([f"#{tag}" for tag in hashtags])  # Properly join hashtags with spaces
+            hashtag_string = ' '.join([f"#{tag}" for tag in hashtags]) 
             validated_data['description'] = f"{validated_data.get('description', '').strip()}\n\n{hashtag_string}"
-
-        # Set the creator to the logged-in user
-        validated_data['creator'] = self.context['request'].user
+        validated_data['creator'] = self.context['request'].user #creator houwa l logged user
 
         post = Post.objects.create(**validated_data)
 
-        # Save media files
         for file in media_files:
             media_instance = Media.objects.create(
                 file=file,
@@ -80,12 +76,12 @@ class PostSerializer(serializers.ModelSerializer):
         media_files = validated_data.pop('media_files', [])
         hashtags = validated_data.pop('hashtags', [])
 
-        # Append hashtags to the description
+        #ll hashtag
         if hashtags:
-            hashtag_string = ' '.join([f"#{tag}" for tag in hashtags])  # Properly join hashtags with spaces
+            hashtag_string = ' '.join([f"#{tag}" for tag in hashtags])  
             validated_data['description'] = f"{validated_data.get('description', instance.description).strip()}\n\n{hashtag_string}"
 
-        # Update fields
+        #win lupdate
         instance.title = validated_data.get('title', instance.title)
         instance.description = validated_data.get('description', instance.description)
         instance.scheduled_for = validated_data.get('scheduled_for', instance.scheduled_for)
@@ -93,7 +89,6 @@ class PostSerializer(serializers.ModelSerializer):
         instance.platforms = validated_data.get('platforms', instance.platforms)
         instance.save()
 
-        # Add new media files
         for file in media_files:
             media_instance = Media.objects.create(
                 file=file,

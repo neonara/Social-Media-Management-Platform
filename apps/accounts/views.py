@@ -96,7 +96,7 @@ class CurrentUserView(APIView):
         return Response(serializer.data)
 
 class AssignedCMsToModeratorView(APIView):
-    permission_classes = [IsModerator]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         moderator = request.user
@@ -148,7 +148,7 @@ class AssignedModeratorCommunityManagersView(APIView):
     """
     View to retrieve a list of community managers assigned by the currently logged-in moderator.
     """
-    permission_classes = [IsAuthenticated, IsModeratorOrAdmin]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         moderator = request.user
@@ -171,7 +171,7 @@ class AssignedModeratorClientsView(APIView):
     """
     View to retrieve a list of clients directly assigned to the currently logged-in moderator.
     """
-    permission_classes = [IsModeratorOrAdmin]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         moderator = request.user  # Get the logged-in moderator.
@@ -412,7 +412,7 @@ class UpdateUserView(UpdateAPIView):
     queryset = User.objects.all()
     serializer_class = GetUserSerializer
     permission_classes = [IsAuthenticated]
-    lookup_field = 'id'  # This matches your URL pattern
+    lookup_field = 'user_id'  # This matches your URL pattern
 
     def get_object(self):
         """
@@ -645,7 +645,7 @@ class ListUsers(APIView):
         return Response(user_data, status=status.HTTP_200_OK)
 
 class AssignedCMsToModeratorView(APIView):
-    permission_classes = [IsModerator]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         moderator = request.user

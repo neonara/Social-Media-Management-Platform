@@ -126,8 +126,10 @@ class CreatePostView(APIView):
             )
 
         # Post Creation
+        
         data['media'] = media_files
         data['client'] = client.id
+        data['status'] = 'scheduled'
         serializer = PostSerializer(data=data, context={'request': request})
         
         if serializer.is_valid():
@@ -192,7 +194,7 @@ class ListPostsView(APIView):
 class UpdatePostView(APIView):
     permission_classes = [IsAuthenticated, IsAssignedToPost]
     
-    def get(self, request, post_id):  # Add this method
+    def get(self, request, post_id):  
         try:
             post = Post.objects.get(id=post_id)
             self.check_object_permissions(request, post)
@@ -230,18 +232,16 @@ class UpdatePostView(APIView):
             )
 
             if serializer.is_valid():
-                post = serializer.save()
+                post = serializer.save(last_edited_by=request.user)
 
-                # Process new media files
+                
                 if media_files:
                     self._handle_media_upload(post, media_files, request.user)
 
-                # Update cache
+                
                 updated_data = PostSerializer(post, context={'request': request}).data
                 cache.set(f"post:{post_id}", updated_data, timeout=60*60)
                 cache.set(f"post_detail:{post_id}", updated_data, timeout=60*60)
-                
-                # Invalidate list caches
                 cache.delete(f"user_posts:{request.user.id}")
                 invalidate_cache(Post)
 
@@ -250,7 +250,6 @@ class UpdatePostView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         except Post.DoesNotExist:
-            # More detailed error message
             return Response(
                 {"error": f"Post with ID {post_id} not found or you don't have permission"},
                 status=status.HTTP_404_NOT_FOUND
@@ -260,6 +259,7 @@ class UpdatePostView(APIView):
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+   
     def _handle_media_upload(self, post, media_files, user):
         for file in media_files:
             media_instance = Media.objects.create(
@@ -338,22 +338,24 @@ class FetchDraftsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        # Cache key for user drafts
         cache_key = f"user_drafts:{request.user.id}"
         cached_data = cache.get(cache_key)
-        
+
         if cached_data is None:
+            # Fetch drafts where the creator is the logged-in user
             drafts = Post.objects.filter(
-                models.Q(creator=request.user) |
-                models.Q(client=request.user) |
-                models.Q(creator__assigned_moderator=request.user) |
-                models.Q(creator__assigned_communitymanagers=request.user),
+                creator=request.user,
                 status='draft'
             ).distinct()
-            
+
+            # Serialize the drafts
             serializer = PostSerializer(drafts, many=True, context={'request': request})
             cached_data = serializer.data
-            cache.set(cache_key, cached_data, timeout=60*5)  # 5 minutes
-        
+
+            # Cache the serialized drafts for 5 minutes
+            cache.set(cache_key, cached_data, timeout=60 * 5)
+
         return Response(cached_data, status=status.HTTP_200_OK)
 
 class SaveDraftView(APIView):
@@ -401,7 +403,6 @@ class DeletePostView(APIView):
                 {"error": "Post not found."},
                 status=status.HTTP_404_NOT_FOUND
             )
-    permission_classes = [IsAuthenticated, IsModerator]
 
     def get(self, request, client_id):
         # Verify the client is assigned to this moderator
