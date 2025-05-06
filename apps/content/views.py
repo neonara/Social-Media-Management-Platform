@@ -102,42 +102,35 @@ class CreatePostView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-        # Media Processing
-        media_files = []
-        try:
-            media_keys = [key for key in files if key.startswith('media_files[')]
-            media_keys.sort(key=lambda x: int(x.split('[')[1].split(']')[0]))
-            
-            for key in media_keys:
-                file = files.get(key)
-                self.validate_file(file)
-                media = Media.objects.create(
-                    file=file,
-                    creator=request.user,
-                    type=self.get_file_type(file.content_type),
-                    name=file.name
-                )
-                media_files.append(media.id)
+        # Media Processing - Using the old approach
+        if not data.get('media_files') and files:
+            if 'media_files' in files:
+                # Multiple files with same field name
+                data['media_files'] = files.getlist('media_files')
+            else:
+                # Process indexed files (media_files[0], media_files[1], etc.)
+                media_files_list = []
+                media_keys = [key for key in files if key.startswith('media_files[')]
+                media_keys.sort(key=lambda x: int(x.split('[')[1].split(']')[0]))
                 
-        except ValidationError as e:
-            return Response(
-                {"error": str(e)}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
+                for key in media_keys:
+                    file = files.get(key)
+                    self.validate_file(file)
+                    media_files_list.append(file)
+                    
+                data['media_files'] = media_files_list
 
         # Post Creation
-        
-        data['media'] = media_files
         data['client'] = client.id
-        data['status'] = 'scheduled'
+        data['status'] = data.get('status', 'scheduled')
+        
         serializer = PostSerializer(data=data, context={'request': request})
         
         if serializer.is_valid():
             try:
                 post = serializer.save(creator=request.user)
-                post.media.set(media_files)
                 
-                # Cache the newly created post (ADD THESE LINES)
+                # Cache the newly created post
                 post_data = PostSerializer(post, context={'request': request}).data
                 cache.set(f"post:{post.id}", post_data, timeout=60*60)  # Cache for 1 hour
                 cache.set(f"post_detail:{post.id}", post_data, timeout=60*60)
@@ -152,6 +145,7 @@ class CreatePostView(APIView):
                     {"error": str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def validate_file(self, file):
         max_size = 100 * 1024 * 1024
@@ -169,7 +163,6 @@ class CreatePostView(APIView):
 
     def get_file_type(self, content_type):
         return 'video' if 'video' in content_type else 'image'
-
 class ListPostsView(APIView):
     permission_classes = [IsAuthenticated]
 
