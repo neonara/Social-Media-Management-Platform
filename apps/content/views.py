@@ -52,7 +52,7 @@ def get_cached_or_query(model, pk=None):
     
     if data is None:
         data = model.objects.get(pk=pk) if pk else model.objects.all()
-        cache.set(key, data, timeout=60*15)
+        cache.set(key, data)
     return data
 
 def invalidate_cache(model, pk=None):
@@ -163,6 +163,72 @@ class CreatePostView(APIView):
 
     def get_file_type(self, content_type):
         return 'video' if 'video' in content_type else 'image'
+    
+class GetPostCreatorsView(APIView):
+    """
+    View to fetch all unique creators of posts.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Fetch all posts
+        posts = Post.objects.all()
+
+        # Get the creators of these posts
+        creators = User.objects.filter(
+            id__in=posts.values_list('creator_id', flat=True)
+        ).distinct()
+
+        # Serialize the creators
+        creator_data = [
+            {
+                "id": creator.id,
+                "full_name": creator.full_name,
+                "email": creator.email,
+            }
+            for creator in creators
+        ]
+
+        return Response(creator_data, status=status.HTTP_200_OK)
+
+class UpdatePostToDraftView(APIView):
+    """
+    View to update a scheduled post's status to 'draft'.
+    """
+    permission_classes = [IsAuthenticated, IsAssignedToPost]
+
+    def patch(self, request, post_id):
+        try:
+            # Fetch the post
+            post = Post.objects.get(id=post_id, status='scheduled')
+            self.check_object_permissions(request, post)
+
+            # Update the post's status to 'draft'
+            post.status = 'draft'
+            post.save()
+
+            # Invalidate related caches
+            cache.delete(f"post:{post_id}")
+            cache.delete(f"post_detail:{post_id}")
+            cache.delete(f"user_posts:{request.user.id}")
+            invalidate_cache(Post, post_id)
+
+            # Serialize the updated post
+            updated_data = PostSerializer(post, context={'request': request}).data
+
+            return Response(updated_data, status=status.HTTP_200_OK)
+
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Scheduled post not found or you don't have permission."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 class ListPostsView(APIView):
     permission_classes = [IsAuthenticated]
 

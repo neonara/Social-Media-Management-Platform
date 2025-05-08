@@ -42,6 +42,107 @@ class IsModeratorOrAdmin(BasePermission):
         return request.user.is_authenticated and (request.user.is_moderator or request.user.is_administrator or request.user.is_superadministrator )
 
 
+#view
+
+#fetch
+
+class ClientFetchModeratorAndCMsView(APIView):
+    """
+    View for a client to fetch their assigned moderator and the community managers assigned to that moderator.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # Ensure the user is a client
+        if not user.is_client:
+            return Response(
+                {"error": "You do not have permission to access this resource."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Fetch the assigned moderator
+        moderator = user.assigned_moderator
+        if not moderator:
+            return Response(
+                {"error": "No moderator assigned to this client."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Fetch the community managers assigned to the moderator
+        assigned_cms = moderator.assigned_communitymanagers.filter(is_community_manager=True)
+
+        # Serialize the data
+        data = {
+            "moderator": {
+                "id": moderator.id,
+                "full_name": moderator.full_name,
+                "email": moderator.email,
+                "phone_number": moderator.phone_number,
+            },
+            "community_managers": [
+                {
+                    "id": cm.id,
+                    "full_name": cm.full_name,
+                    "email": cm.email,
+                    "phone_number": cm.phone_number,
+                }
+                for cm in assigned_cms
+            ],
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
+
+class AssignedModeratorsAndClientsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+
+        # Ensure the user is a community manager
+        if not user.is_community_manager:
+            return Response(
+                {"error": "You do not have permission to access this resource."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Fetch assigned moderators
+        assigned_moderators = User.objects.filter(
+            assigned_communitymanagers=user,
+            is_moderator=True
+        )
+
+        # Fetch assigned clients
+        assigned_clients = User.objects.filter(
+            assigned_communitymanagerstoclient=user,
+            is_client=True
+        )
+
+        # Serialize the data
+        data = {
+            "moderators": [
+                {
+                    "id": moderator.id,
+                    "full_name": moderator.full_name,
+                    "email": moderator.email,
+                    "phone_number": moderator.phone_number,
+                }
+                for moderator in assigned_moderators
+            ],
+            "clients": [
+                {
+                    "id": client.id,
+                    "full_name": client.full_name,
+                    "email": client.email,
+                    "phone_number": client.phone_number,
+                }
+                for client in assigned_clients
+            ],
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
+
 class GetUserByIdView(APIView):
     permission_classes = [IsAuthenticated]
     
