@@ -9,6 +9,8 @@ requests==2.31.0
 celery==5.3.0
 channels>=4.0.0
 django-redis==5.4
+channels_redis==4.2.0
+daphne
 
 # Support libraries
 asgiref==3.8.1

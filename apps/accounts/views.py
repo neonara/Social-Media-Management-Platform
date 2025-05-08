@@ -1,7 +1,7 @@
-from .models import User
-from django.conf import settings
+from apps.accounts.tasks import send_celery_email
+from apps.accounts.models import User
+from social_media_management import settings
 from rest_framework.views import APIView
-from django.core.mail import send_mail
 from rest_framework.exceptions import PermissionDenied
 
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
@@ -10,6 +10,9 @@ from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+
 
 from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, GetUserSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer, RemoveCMsFromClientSerializer, AssignCMToClientSerializer, CreateCMSerializer
 
@@ -192,6 +195,8 @@ class FetchEmails(APIView):
     
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
+    
+    @method_decorator(cache_page(300))  # Cache for 5 minutes
     def get(self, request):
         serializer = GetUserSerializer(request.user)
         return Response(serializer.data)
@@ -340,7 +345,7 @@ class CreateUserView(APIView):
                 response_data = {"message": "User created successfully"}
                 
                
-                if settings.DEBUG:
+                if settings.DEBUG_EMAIL:
                     response_data.update({
                         "message": "DEVELOPMENT ONLY - Credentials for testing",
                         "email": user.email,
@@ -507,7 +512,8 @@ class PasswordResetConfirmView(generics.GenericAPIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-#update
+#update user
+
 
 class UpdateUserView(UpdateAPIView):
     queryset = User.objects.all()
@@ -516,10 +522,8 @@ class UpdateUserView(UpdateAPIView):
     lookup_field = 'user_id'  # This matches your URL pattern
 
     def get_object(self):
-        """
-        Ensure users can only update their own profile
-        """
-        obj = super().get_object()  # Gets user based on URL ID
+        user_id = self.kwargs.get('user_id')
+        obj = get_object_or_404(self.queryset, id=user_id)
         if obj != self.request.user:
             raise PermissionDenied("You can only update your own profile")
         return obj 
@@ -545,7 +549,12 @@ class UpdateUserView(UpdateAPIView):
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
 
-        # Notify the user about the profile update
+        # Store updated fields for the notification
+        updated_fields = []
+        for field, value in request.data.items():
+            if field not in restricted_fields:
+                updated_fields.append(field)
+
         notify_user(
             user=instance,
             title="Profile Updated",
@@ -553,7 +562,31 @@ class UpdateUserView(UpdateAPIView):
             type="profile_update"
         )
 
-        cache.delete(f"user_meta:{request.user.id}")
+        # Use the centralized function to clear user cache
+        from apps.accounts.services import clear_user_cache
+        clear_user_cache(instance.id)
+        
+        # For Redis-specific cache clearing with django_redis
+        # Invalidate the cache_page decorator cache for CurrentUserView
+        try:
+            # Get the Redis client from django_redis
+            from django_redis import get_redis_connection
+            redis_conn = get_redis_connection("default")
+            
+            # Clear cache patterns related to the user
+            cache_key_pattern = f"*:views.decorators.cache.cache_page.*user*{instance.id}*"
+            for key in redis_conn.keys(cache_key_pattern):
+                redis_conn.delete(key)
+                
+            # Also clear the current-user patterns
+            current_user_pattern = "*:current-user*"
+            for key in redis_conn.keys(current_user_pattern):
+                redis_conn.delete(key)
+                
+        except Exception as e:
+            # Log the error but don't interrupt the response
+            print(f"Error clearing Redis cache: {str(e)}")
+
         return Response(serializer.data, status=status.HTTP_200_OK)
     
 
@@ -585,6 +618,22 @@ class AssignCMToClientView(APIView):
             client.assigned_communitymanagerstoclient.add(community_manager)
             client.save()
 
+            # Notify the community manager about the assignment
+            notify_user(
+                user=community_manager,
+                title="Assigned to Client",
+                message=f"You have been assigned to client {client.full_name or client.email}.",
+                type="assignment"
+            )
+
+            # Notify the client about the assignment
+            notify_user(
+                user=client,
+                title="Community Manager Assigned",
+                message=f"Community Manager {community_manager.full_name or community_manager.email} has been assigned to your account.",
+                type="community_manager_assignment"
+            )
+
             return Response({"message": f"Community Manager {community_manager.email} assigned to client {client.email}."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -608,6 +657,30 @@ class RemoveCommunityManagerFromModeratorView(APIView):
                         client.assigned_communitymanagerstoclient.remove(cm_to_remove)
                         client.save()  # Important to save the client object
 
+                        # Notify the client about the removal
+                        notify_user(
+                            user=client,
+                            title="Community Manager Removed",
+                            message=f"Community Manager {cm_to_remove.full_name or cm_to_remove.email} has been removed from your account.",
+                            type="removal"
+                        )
+
+                # Notify the community manager about the removal
+                notify_user(
+                    user=cm_to_remove,
+                    title="Unassigned from Moderator",
+                    message=f"You have been unassigned from Moderator {moderator.full_name or moderator.email}.",
+                    type="removal"
+                )
+
+                # Notify the moderator about the removal
+                notify_user(
+                    user=moderator,
+                    title="Community Manager Removed",
+                    message=f"Community Manager {cm_to_remove.full_name or cm_to_remove.email} has been removed from your assignments.",
+                    type="removal"
+                )
+
                 return Response({"message": "Community Manager unassigned from Moderator and associated clients."}, status=status.HTTP_200_OK)
             else:
                 return Response({"error": "This Community Manager is not assigned to this Moderator."}, status=status.HTTP_400_BAD_REQUEST)
@@ -625,12 +698,30 @@ class RemoveModeratorFromClientView(APIView):
                 return Response({"message": "No moderator assigned to this client."}, status=status.HTTP_400_BAD_REQUEST)
 
             # Unassign the moderator
+            moderator = client.assigned_moderator
             client.assigned_moderator = None
 
             # Unassign all community managers associated with this client
             client.assigned_communitymanagerstoclient.clear()
 
             client.save()
+
+            # Notify the moderator about the removal
+            notify_user(
+                user=moderator,
+                title="Unassigned from Client",
+                message=f"You have been unassigned from client {client.full_name or client.email}.",
+                type="removal"
+            )
+
+            # Notify the client about the removal
+            notify_user(
+                user=client,
+                title="Moderator Removed",
+                message="Your assigned moderator has been removed.",
+                type="removal"
+            )
+
             return Response({"message": "Moderator unassigned from client and associated community manager assignments removed."}, status=status.HTTP_200_OK)
         except User.DoesNotExist:
             return Response({"error": "Client not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -778,10 +869,6 @@ class AssignedCMsToModeratorView(APIView):
         return Response(cm_data, status=status.HTTP_200_OK)
 
 
-
-
-    
-
 class GetUserByIdView(APIView):
     
     permission_classes = [IsAuthenticated]
@@ -840,12 +927,27 @@ class AssignModeratorToClientView(APIView):
             client.assigned_moderator = moderator
             client.save()
 
-            send_mail(
+            # Notify the moderator
+            notify_user(
+                user=moderator,
+                title="Assigned as Moderator",
+                message=f"You have been assigned as a moderator for client {client.full_name or client.email}.",
+                type="assignment"
+            )
+
+            # Notify the client
+            notify_user(
+                user=client,
+                title="Moderator Assigned",
+                message=f"Moderator {moderator.full_name or moderator.email} has been assigned to your account.",
+                type="assignment"
+            )
+
+            # Send email asynchronously using Celery
+            send_celery_email.delay(
                 'You have been assigned as a moderator',
-                f'Hello {moderator.full_name},\n\nYou have been assigned as a moderator for client {client.full_name}. Please review the client details and take the necessary actions.\n\nBest regards,\nAdmin',
-                settings.EMAIL_HOST_USER,
-                [moderator.email],
-                fail_silently=False,
+                f'Hello {moderator.full_name or moderator.email},\n\nYou have been assigned as a moderator for client {client.full_name or client.email}. Please review the client details and take the necessary actions.\n\nBest regards,\nAdmin',
+                moderator.email
             )
 
             return Response({"message": f"Moderator {moderator.email} assigned to client {client.email}."})
@@ -857,7 +959,6 @@ class AssignCommunityManagerToModeratorView(APIView):
 
     def put(self, request, moderator_id):
         try:
-            
             moderator = User.objects.get(id=moderator_id, is_moderator=True)
         except User.DoesNotExist:
             return Response({"error": "Moderator not found."}, status=404)
@@ -870,16 +971,30 @@ class AssignCommunityManagerToModeratorView(APIView):
             except User.DoesNotExist:
                 return Response({"error": "Community Manager not found."}, status=404)
 
-            
             moderator.assigned_communitymanagers.add(cm)
             moderator.save()
 
-            send_mail(
+            # Notify the community manager
+            notify_user(
+                user=cm,
+                title="Assigned to Moderator",
+                message=f"You have been assigned to Moderator {moderator.full_name or moderator.email}.",
+                type="assignment"
+            )
+
+            # Notify the moderator
+            notify_user(
+                user=moderator,
+                title="Community Manager Assigned",
+                message=f"Community Manager {cm.full_name or cm.email} has been assigned to you.",
+                type="assignment"
+            )
+
+            # Send email asynchronously using Celery
+            send_celery_email.delay(
                 'You have been assigned to a moderator',
-                f'Hello {cm.full_name},\n\nYou have been assigned to Moderator {moderator.full_name}. Please review and collaborate.\n\nBest regards,\nAdmin',
-                settings.EMAIL_HOST_USER,
-                [cm.email],
-                fail_silently=False,
+                f'Hello {cm.full_name or cm.email},\n\nYou have been assigned to Moderator {moderator.full_name or moderator.email}. Please review and collaborate.\n\nBest regards,\nAdmin',
+                cm.email
             )
 
             return Response({"message": f"Community Manager {cm.email} assigned to Moderator {moderator.email}."})
@@ -897,8 +1012,25 @@ class RemoveCommunityManagerFromModeratorView(APIView):
             if cm_to_remove in moderator.assigned_communitymanagers.all():
                 moderator.assigned_communitymanagers.remove(cm_to_remove)
 
+                # Notify the community manager about the removal
+                notify_user(
+                    user=cm_to_remove,
+                    title="Unassigned from Moderator",
+                    message=f"You have been unassigned from Moderator {moderator.full_name or moderator.email}.",
+                    type="removal"
+                )
+
+                # Notify the moderator about the removal
+                notify_user(
+                    user=moderator,
+                    title="Community Manager Removed",
+                    message=f"Community Manager {cm_to_remove.full_name or cm_to_remove.email} has been removed from your assignments.",
+                    type="removal"
+                )
+
                 # Do not modify the posts; they remain associated with the client
                 return Response({"message": "Community Manager unassigned from Moderator. Posts remain associated with the client."}, status=status.HTTP_200_OK)
+                
             else:
                 return Response({"error": "This Community Manager is not assigned to this Moderator."}, status=status.HTTP_400_BAD_REQUEST)
         except User.DoesNotExist:
@@ -910,16 +1042,34 @@ class RemoveModeratorFromClientView(APIView):
     def delete(self, request, client_id):
         try:
             client = User.objects.get(id=client_id, is_client=True)
-
+            
             if client.assigned_moderator is None:
                 return Response({"message": "No moderator assigned to this client."}, status=status.HTTP_400_BAD_REQUEST)
-
-            # Unassign the moderator
+           
+            moderator = client.assigned_moderator
             client.assigned_moderator = None
 
             # Do not modify the posts; they remain associated with the client
             client.save()
+            
+
+            # Notify the moderator about the removal
+            notify_user(
+                user=moderator,
+                title="Unassigned from Client",
+                message=f"You have been unassigned from client {client.full_name or client.email}.",
+                type="removal"
+            )
+
+            # Notify the client about the removal
+            notify_user(
+                user=client,
+                title="Moderator Removed",
+                message=f"Your assigned moderator {moderator.full_name or moderator.email} has been removed.",
+                type="removal"
+            )
             return Response({"message": "Moderator unassigned from client. Posts remain associated with the client."}, status=status.HTTP_200_OK)
+        
         except User.DoesNotExist:
             return Response({"error": "Client not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -965,4 +1115,71 @@ class CurrentUserView(APIView):
     def get(self, request):
         user_data = get_cached_user_data(request.user)  # Use cached data
         return Response(user_data)
+
+class GetUserProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, user_id=None):
+        # If no user_id provided, return the current user's profile
+        if not user_id:
+            user_id = request.user.id
+            
+        # Try to get user data from cache
+        cache_key = f"user_profile:{user_id}"
+        cached_profile = cache.get(cache_key)
+        
+        if cached_profile is not None:
+            return Response(cached_profile)
+            
+        # If not in cache, get from database
+        try:
+            user = User.objects.get(id=user_id)
+            serializer = GetUserSerializer(user)
+            profile_data = serializer.data
+            
+            # Cache the profile data
+            cache.set(cache_key, profile_data, 3600)  # Cache for 1 hour
+            
+            return Response(profile_data)
+        except User.DoesNotExist:
+            return Response(
+                {"error": "User not found"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+class GetUserStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        user_id = user.id
+        
+        # Try to get user stats from cache
+        cache_key = f"user_stats:{user_id}"
+        cached_stats = cache.get(cache_key)
+        
+        if cached_stats is not None:
+            return Response(cached_stats)
+        
+        # If not in cache, compute and cache
+        from apps.notifications.models import Notification
+        from apps.content.models import Content
+        
+        stats = {
+            'unread_notifications': Notification.objects.filter(
+                recipient=user, 
+                is_read=False
+            ).count(),
+            
+            'total_content': Content.objects.filter(
+                author=user
+            ).count(),
+            
+            # Add any other stats you want to track
+        }
+        
+        # Cache the stats
+        cache.set(cache_key, stats, 1800)  # Cache for 30 minutes
+        
+        return Response(stats)
 

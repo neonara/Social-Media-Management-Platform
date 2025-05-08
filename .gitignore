@@ -17,6 +17,7 @@
 .env
 .venv/
 .venv
+venv
 
 # Redis, Celery, or temporary files (if added later)
 *.log
