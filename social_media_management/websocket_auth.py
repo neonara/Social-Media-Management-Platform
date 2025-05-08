@@ -15,7 +15,7 @@ class TokenAuthMiddleware(BaseMiddleware):
         
         # Get the token from query string
         query_string = scope.get('query_string', b'').decode()
-        print("QUERY STRING:", query_string)
+        
         if query_string:
             try:
                 query_params = dict(urllib.parse.parse_qsl(query_string))

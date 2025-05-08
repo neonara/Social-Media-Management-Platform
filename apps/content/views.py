@@ -9,6 +9,9 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from django.conf import settings
 
+from apps.accounts.tasks import send_celery_email
+from apps.notifications.services import notify_user
+
 from .models import Post, Media
 from .serializers import PostSerializer, MediaSerializer
 from apps.accounts.models import User
@@ -129,7 +132,23 @@ class CreatePostView(APIView):
         if serializer.is_valid():
             try:
                 post = serializer.save(creator=request.user)
-                
+
+                # Notify the client about the post creation
+                notify_user(
+                    user=client,
+                    title="Post is created",
+                    message=f"A post has been created in your pages and scheduled for {post.scheduled_for}",
+                    type="content"
+                )
+                print(f"Notification sent to {client}")
+
+                # Send email asynchronously using Celery
+                send_celery_email.delay(
+                    'Post is created',
+                    f'Hello {client.full_name or client.email}, A post has been created in your pages and scheduled for {post.scheduled_for}',
+                    client.email
+                )
+
                 # Cache the newly created post
                 post_data = PostSerializer(post, context={'request': request}).data
                 cache.set(f"post:{post.id}", post_data, timeout=60*60)  # Cache for 1 hour
@@ -145,8 +164,8 @@ class CreatePostView(APIView):
                     {"error": str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     def validate_file(self, file):
         max_size = 100 * 1024 * 1024
         if file.size > max_size:
