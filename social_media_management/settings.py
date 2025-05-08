@@ -2,12 +2,12 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
+from csp.constants import SELF
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 MEDIA_URL = '/media/'
-
 # Load environment variables from .env file
 load_dotenv()
 
@@ -36,6 +36,7 @@ CACHES = {
 # Application definition
 
 INSTALLED_APPS = [
+    'csp',
     'apps.accounts',         
     'apps.content',           
     # 'apps.planning',          
@@ -73,7 +74,6 @@ CSRF_COOKIE_SAMESITE = 'Lax'  # Use 'None' if using HTTPS
 CSRF_COOKIE_SECURE = False    # Set to True in production with HTTPS
 CSRF_COOKIE_HTTPONLY = False  # Must be False to allow access via JavaScript
 
-
 # CORS Settings
 CORS_ALLOW_ALL_ORIGINS = False  # Restrict to specific origins in production
 CORS_ALLOWED_ORIGINS = [
@@ -85,7 +85,7 @@ CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be sent with requests
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
 ]
-# CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
+
 # Allow all needed HTTP methods
 CORS_ALLOW_METHODS = [
     'DELETE',
@@ -109,13 +109,22 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
+#csp
+CONTENT_SECURITY_POLICY = {
+    "EXCLUDE_URL_PREFIXES": ["/admin"],
+    "DIRECTIVES": {
+        "default-src": [SELF, "*localhost:3000"],
+        "script-src": [SELF, "js.cdn.com/localhost:3000/"],
+        "img-src": [SELF, "data:", "localhost:3000"],
+    },
+}
+
 # CSRF Trusted Origins
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
 ]
-CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
-
+WILL_MIGRATE = False
 ROOT_URLCONF = 'social_media_management.urls'
 
 TEMPLATES = [
