@@ -81,10 +81,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be sent with requests
 
-# # In production, replace with specific origins:
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
+# CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
 
 # Allow all needed HTTP methods
 CORS_ALLOW_METHODS = [
@@ -162,7 +159,7 @@ DATABASES = {
 REST_FRAMEWORK = {
     'NON_FIELD_ERRORS_KEY': 'error',
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework.authentication.SessionAuthentication',
+        # 'rest_framework.authentication.SessionAuthentication',
         'rest_framework_simplejwt.authentication.JWTAuthentication',
     ),
 }

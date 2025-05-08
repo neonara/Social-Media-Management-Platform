@@ -7,8 +7,7 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from .utils.password_utils import generate_password
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-from django.utils.text import slugify
-from django.core.mail import send_mail
+from apps.accounts.tasks import send_celery_email
 from django.conf import settings
 
 #login logout
@@ -138,13 +137,15 @@ class CreateUserSerializer(serializers.ModelSerializer):
         """
 
         try:
-            send_mail(
+            send_celery_email(
                 'Account Created - Social Media Management Platform',
                 email_body,
                 "achref.maarfi0@gmail.com",
                 [email],
                 fail_silently=False,
             )
+            print(f"DEV CREDENTIALS - Email: {email}, Password: {password}")
+
         except Exception as e:
             # In development, just log the error and continue
             print(f"Email sending failed: {e}")
@@ -201,7 +202,7 @@ class CreateCMSerializer(serializers.ModelSerializer):
         """
 
         try:
-            send_mail(
+            send_celery_email(
                 'Account Created - Social Media Management Platform',
                 email_body,
                 "achref.maarfi0@gmail.com",

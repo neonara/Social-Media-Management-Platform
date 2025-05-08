@@ -1,7 +1,7 @@
 from datetime import timedelta
 from celery import shared_task
 from django.utils.timezone import now
-from .models import Notification
+from apps.notifications.models import Notification
 
 @shared_task
 def clean_old_notifications():
