@@ -65,7 +65,8 @@ def invalidate_cache(model, pk=None):
     ]
     for key in keys:
         cache.delete(key)
-        
+  
+#view classes     
 class CreatePostView(APIView):
     permission_classes = [IsAuthenticated, IsModeratorOrCM]
 
@@ -254,19 +255,22 @@ class ListPostsView(APIView):
     def get(self, request):
         cache_key = f"user_posts:{request.user.id}"
         cached_data = cache.get(cache_key)
-        
+
         if cached_data is None:
+            # Fetch posts with related client and creator objects
             posts = Post.objects.filter(
                 models.Q(creator=request.user) |
                 models.Q(client=request.user) |
                 models.Q(creator__assigned_moderator=request.user) |
                 models.Q(creator__assigned_communitymanagers=request.user)
             ).distinct().select_related('client', 'creator').prefetch_related('media')
-            
+
+            # Serialize the posts with context
             serializer = PostSerializer(posts, many=True, context={'request': request})
             cached_data = serializer.data
-            cache.set(cache_key, cached_data, timeout=60*10)  # 10 minutes
-        
+
+            # Cache the serialized data
+            cache.set(cache_key, cached_data, timeout=60 * 10)  
         return Response(cached_data, status=status.HTTP_200_OK)
 
 class UpdatePostView(APIView):
@@ -500,3 +504,8 @@ class DeletePostView(APIView):
         posts = Post.objects.filter(client=client)
         serializer = PostSerializer(posts, many=True, context={'request': request})
         return Response(serializer.data)
+    
+
+    
+    
+    

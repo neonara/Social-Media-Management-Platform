@@ -326,8 +326,6 @@ class EligibleCMsForClient(APIView):
 
         serializer = GetUserSerializer(eligible_cms, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
-    
-
 
 #create
 class CreateUserView(APIView):
