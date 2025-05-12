@@ -307,7 +307,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         reset_link = f"http://localhost:3000/reset-password-confirm/{uid}/{token}/"
 
-        send_mail(
+        send_celery_email(
             "Password Reset Request",
             f"Click the link below to reset your password:\n\n{reset_link}",
             "noreply@yourapp.com",

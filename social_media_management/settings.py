@@ -247,10 +247,14 @@ SESSION_CACHE_ALIAS = "default"
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = False  # Set to True in production
 
+FACEBOOK_GRAPH_API_VERSION = 'v21.0'
 FACEBOOK_APP_ID = os.getenv("FACEBOOK_APP_ID")
 FACEBOOK_APP_SECRET = os.getenv("FACEBOOK_APP_SECRET")
-FACEBOOK_REDIRECT_URI = os.getenv("FACEBOOK_REDIRECT_URI")
-FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic"
+FACEBOOK_REDIRECT_URI = "http://localhost:8000/api/facebook/callback/"
+FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement,email,public_profile"
+
+INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,pages_show_list"
+INSTAGRAM_REDIRECT_URI = "http://localhost:8000/api/instagram/callback/"
 
 CHANNEL_LAYERS = {
     "default": {
@@ -261,8 +265,8 @@ CHANNEL_LAYERS = {
         }
     }
 
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'  # or use 'host.docker.internal' if Redis is in Docker
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'  
 CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'  # or your local timezone
+CELERY_TIMEZONE = 'UTC'

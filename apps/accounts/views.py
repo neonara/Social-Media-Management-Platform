@@ -6,13 +6,15 @@ from rest_framework.exceptions import PermissionDenied
 
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.settings import api_settings
 from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from django.views.decorators.cache import cache_page
 from django.utils.decorators import method_decorator
-
+from datetime import timedelta
 
 from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, GetUserSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer, RemoveCMsFromClientSerializer, AssignCMToClientSerializer, CreateCMSerializer
 
@@ -397,18 +399,35 @@ class CreateCMView(APIView):
 
 #login logout
 class UserLoginView(APIView):
-    
-    permission_classes = [AllowAny]  
+    permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
+            remember_me = request.data.get("remember_me", False)
+
+            # Set token expiration based on "remember me"
+            if remember_me:
+                api_settings.REFRESH_TOKEN_LIFETIME = timedelta(days=30)  # Extend refresh token lifetime
+            else:
+                api_settings.REFRESH_TOKEN_LIFETIME = timedelta(days=1)  # Default refresh token lifetime
+
             response = Response(serializer.validated_data, status=status.HTTP_200_OK)
-            response.set_cookie("access_token", serializer.validated_data["access_token"], httponly=True, samesite="Lax")  # Store token securely
-            response.set_cookie("refresh_token", serializer.validated_data["refresh_token"], httponly=True, samesite="Lax")
+            response.set_cookie(
+                "access_token",
+                serializer.validated_data["access_token"],
+                httponly=True,
+                samesite="Lax",
+            )
+            response.set_cookie(
+                "refresh_token",
+                serializer.validated_data["refresh_token"],
+                httponly=True,
+                samesite="Lax",
+            )
             return response
-        
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
     
 class LogoutUserView(APIView):
     permission_classes = []
@@ -420,15 +439,16 @@ class LogoutUserView(APIView):
 
         try:
             token = RefreshToken(refresh_token)
-            token.blacklist()  # Blacklist token
-        except Exception:
-            return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)
+            token.blacklist()  # Blacklist token if valid
+        except TokenError as e:
+            # Handle token expiration or invalid token
+            if "Token is invalid or expired" not in str(e):
+                return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)
 
         response = Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
         response.delete_cookie("access_token")  # Delete cookies
         response.delete_cookie("refresh_token")
         return response
-
 #password
 class FirstTimePasswordChangeView(APIView):
     permission_classes = [AllowAny]  # Allow anyone to change first-time password
