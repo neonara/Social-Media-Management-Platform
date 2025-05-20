@@ -18,7 +18,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-default-dev-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+DEBUG =True
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -62,14 +62,17 @@ MIDDLEWARE = [
     'csp.middleware.CSPMiddleware', 
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    #'apps.core.middleware.MediaResponseHeadersMiddleware',
 ]
-
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1048576000  # 1000 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 1048576000  # 1000 MB
 # CSRF Settings
 CSRF_COOKIE_SAMESITE = 'Lax'  # Use 'None' if using HTTPS
 CSRF_COOKIE_SECURE = False    # Set to True in production with HTTPS
@@ -83,6 +86,10 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be sent with requests
 
 # CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
+CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
+CSP_DEFAULT_SRC = ("'self'", "http://localhost:3000", "http://localhost:8000")
+CSP_SCRIPT_SRC = ("'self'", "http://localhost:3000", "http://localhost:8000")
+CSP_MEDIA_SRC = ("'self'", "data:", "http://localhost:8000")
 
 # Allow all needed HTTP methods
 CORS_ALLOW_METHODS = [
@@ -108,12 +115,15 @@ CORS_ALLOW_HEADERS = [
 ]
 
 #csp
+# 1. Update Content Security Policy (CSP)
 CONTENT_SECURITY_POLICY = {
     "EXCLUDE_URL_PREFIXES": ["/admin"],
     "DIRECTIVES": {
-        "default-src": [SELF, "*localhost:3000"],
-        "script-src": [SELF, "js.cdn.com/localhost:3000/"],
-        "img-src": [SELF, "data:", "localhost:3000"],
+        "default-src": [SELF, "localhost:3000", "localhost:8000", "*"],
+        "script-src": [SELF, "js.cdn.com", "localhost:3000", "localhost:8000", "*"],
+        "img-src": [SELF, "data:", "localhost:3000", "localhost:8000", "*"],
+        "media-src": [SELF, "data:", "localhost:3000", "localhost:8000", "*"],
+        "connect-src": [SELF, "localhost:3000", "localhost:8000", "*"],
     },
 }
 
@@ -121,6 +131,7 @@ CONTENT_SECURITY_POLICY = {
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'http://127.0.0.1:8000',
 ]
 WILL_MIGRATE = False
 ROOT_URLCONF = 'social_media_management.urls'
@@ -128,7 +139,7 @@ ROOT_URLCONF = 'social_media_management.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR)],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -204,9 +215,16 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media') 
 
-STATIC_URL = 'static/'
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),  # Optional: for custom static dirs
+]
 
+# For WhiteNoise compression (optional but recommended)
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 

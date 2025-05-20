@@ -1,12 +1,27 @@
 from rest_framework import serializers
 from .models import Post, Media
 from rest_framework import serializers
-from django.utils import timezone
-from django.core.files.uploadedfile import InMemoryUploadedFile, TemporaryUploadedFile
 from django.contrib.auth import get_user_model
+
 
 User = get_user_model()
 
+class UserSerializer(serializers.ModelSerializer):
+    """Serializer for User objects."""
+
+    def get(self, instance):
+        """Return serialized data for a single user instance."""
+        return self.to_representation(instance)
+
+    class Meta:
+        model = User
+        fields = [
+            'id', 'email', 'full_name', 'phone_number', 'is_verified',
+            'is_administrator', 'is_moderator', 'is_community_manager',
+            'is_client', 'is_superadministrator', 'user_image'
+        ]
+        read_only_fields = ['id', 'email', 'full_name']
+        
 #media
 class MediaSerializer(serializers.ModelSerializer):
     file_type = serializers.CharField(source='type', read_only=True)
@@ -24,6 +39,8 @@ class MediaSerializer(serializers.ModelSerializer):
 
 #post
 class PostSerializer(serializers.ModelSerializer):
+    creator = UserSerializer(read_only=True)
+    client = UserSerializer(read_only=True)
     media = MediaSerializer(many=True, required=False, read_only=True)
     media_files = serializers.ListField(
         child=serializers.FileField(max_length=100000, allow_empty_file=False, use_url=False),
@@ -37,11 +54,6 @@ class PostSerializer(serializers.ModelSerializer):
         required=False,
         default=list
     )
-    client = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(is_client=True),
-        required=False,
-        allow_null=True
-    )
     last_edited_by = serializers.StringRelatedField(read_only=True)
     class Meta:
         model = Post
@@ -49,7 +61,7 @@ class PostSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'scheduled_for', 'status',
             'creator', 'media', 'media_files', 'platforms', 'hashtags', 'client','last_edited_by'
         ]
-        read_only_fields = ['id', 'creator', 'media','last_edited_by']
+        read_only_fields = ['id', 'creator','client', 'media','last_edited_by']
 
     def create(self, validated_data):
         media_files = validated_data.pop('media_files', [])
