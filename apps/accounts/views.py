@@ -99,6 +99,8 @@ class ClientFetchModeratorAndCMsView(APIView):
 
         return Response(data, status=status.HTTP_200_OK)
 
+# Fetch assigned moderators and clients for community managers
+
 class AssignedModeratorsAndClientsView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -270,7 +272,10 @@ class AssignedModeratorCommunityManagersView(APIView):
                 "id": cm.id,
                 "full_name": cm.full_name,
                 "email": cm.email,
-                # Add other community manager fields you need
+                "assigned_communitymanagerstoclient": [
+                    {"id": client.id, "full_name": client.full_name, "email": client.email}
+                    for client in cm.assigned_communitymanagerstoclient.all()
+                ]
             })
 
         return Response(cm_data, status=status.HTTP_200_OK)
@@ -293,7 +298,10 @@ class AssignedModeratorClientsView(APIView):
                 "id": client.id,
                 "full_name": client.full_name,
                 "email": client.email,
-                # Add other client fields you need
+                "assigned_community_managers": [
+                    {"id": cm.id, "full_name": cm.full_name, "email": cm.email}
+                    for cm in client.assigned_communitymanagerstoclient.all()
+                ]
             })
 
         return Response(client_data, status=status.HTTP_200_OK)
@@ -1044,7 +1052,7 @@ class RemoveCommunityManagerFromModeratorView(APIView):
                 notify_user(
                     user=moderator,
                     title="Community Manager Removed",
-                    message=f"Community Manager {cm_to_remove.full_name or cm_to_remove.email} has been removed from your assignments.",
+                    message=f"Community Manager {cm_to_remove.full_name or cm.to_remove.email} has been removed from your assignments.",
                     type="removal"
                 )
 

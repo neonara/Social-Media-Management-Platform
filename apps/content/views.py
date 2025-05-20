@@ -132,12 +132,15 @@ class CreatePostView(APIView):
         if serializer.is_valid():
             try:
                 post = serializer.save(creator=request.user)
+                scheduled_for = post.get('scheduled_for')
+                if scheduled_for:
+                    scheduled_for = timezone.datetime.strptime(scheduled_for, "%Y-%m-%dT%H:%M:%S.%fZ")
 
                 # Notify the client about the post creation
                 notify_user(
                     user=client,
                     title="Post is created",
-                    message=f"A post has been created in your pages and scheduled for {post.scheduled_for}",
+                    message=f"A post has been created in your pages and scheduled for {scheduled_for}",
                     type="content"
                 )
                 print(f"Notification sent to {client}")
@@ -145,7 +148,7 @@ class CreatePostView(APIView):
                 # Send email asynchronously using Celery
                 send_celery_email.delay(
                     'Post is created',
-                    f'Hello {client.full_name or client.email}, A post has been created in your pages and scheduled for {post.scheduled_for}',
+                    f'Hello {client.full_name or client.email}, A post has been created in your pages and scheduled for {scheduled_for}',
                     client.email
                 )
 
@@ -173,6 +176,7 @@ class CreatePostView(APIView):
         
         allowed_types = [
             'image/jpeg', 
+            'image/jpg', 
             'image/png', 
             'video/mp4', 
             'video/quicktime'
