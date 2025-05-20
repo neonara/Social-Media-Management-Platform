@@ -483,7 +483,7 @@ class PasswordResetRequestView(generics.GenericAPIView):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+ 
         try:
             serializer.send_reset_email()
             return Response({"message": "Password reset email sent."}, status=status.HTTP_200_OK)
@@ -528,7 +528,7 @@ class UpdateUserView(UpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         restricted_fields = {
-            'is_administrator', 'is_moderator', 'is_community_manager',
+            'is_administrator', 'is_moderator','is_superadministrator', 'is_community_manager',
             'is_client', 'is_staff', 'is_supplier', 'is_active',
             'is_superuser', 'is_verified'
         }
@@ -635,6 +635,7 @@ class AssignCMToClientView(APIView):
             return Response({"message": f"Community Manager {community_manager.email} assigned to client {client.email}."}, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 class RemoveCommunityManagerFromModeratorView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]
 
