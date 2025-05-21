@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
-from csp.constants import SELF
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -37,7 +36,6 @@ CACHES = {
 # Application definition
 
 INSTALLED_APPS = [
-    'csp',
     'apps.accounts',         
     'apps.content',           
     # 'apps.planning',          
@@ -59,7 +57,6 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'csp.middleware.CSPMiddleware', 
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -86,10 +83,6 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be sent with requests
 
 # CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
-CSP_IMG_SRC = ("'self'", "data:", "http://localhost:8000")
-CSP_DEFAULT_SRC = ("'self'", "http://localhost:3000", "http://localhost:8000")
-CSP_SCRIPT_SRC = ("'self'", "http://localhost:3000", "http://localhost:8000")
-CSP_MEDIA_SRC = ("'self'", "data:", "http://localhost:8000")
 
 # Allow all needed HTTP methods
 CORS_ALLOW_METHODS = [
@@ -114,17 +107,29 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
-#csp
-# 1. Update Content Security Policy (CSP)
 CONTENT_SECURITY_POLICY = {
-    "EXCLUDE_URL_PREFIXES": ["/admin"],
-    "DIRECTIVES": {
-        "default-src": [SELF, "localhost:3000", "localhost:8000", "*"],
-        "script-src": [SELF, "js.cdn.com", "localhost:3000", "localhost:8000", "*"],
-        "img-src": [SELF, "data:", "localhost:3000", "localhost:8000", "*"],
-        "media-src": [SELF, "data:", "localhost:3000", "localhost:8000", "*"],
-        "connect-src": [SELF, "localhost:3000", "localhost:8000", "*"],
-    },
+    'DIRECTIVES': {
+        'default-src': (
+            "'self'",
+            'http://localhost:3000',
+            'http://localhost:8000',
+        ),
+        'img-src': (
+            "'self'",
+            'data:',
+            'http://localhost:8000',
+        ),
+        'media-src': (
+            "'self'",
+            'data:',
+            'http://localhost:8000',
+        ),
+        'script-src': (
+            "'self'",
+            'http://localhost:3000',
+            'http://localhost:8000',
+        ),
+    }
 }
 
 # CSRF Trusted Origins

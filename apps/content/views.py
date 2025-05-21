@@ -235,6 +235,7 @@ class UpdatePostToDraftView(APIView):
             cache.delete(f"post:{post_id}")
             cache.delete(f"post_detail:{post_id}")
             cache.delete(f"user_posts:{request.user.id}")
+            cache.delete(f"user_drafts:{request.user.id}")  # <-- Add this line
             invalidate_cache(Post, post_id)
 
             # Serialize the updated post
@@ -329,6 +330,7 @@ class UpdatePostView(APIView):
                 cache.set(f"post:{post_id}", updated_data, timeout=60*60)
                 cache.set(f"post_detail:{post_id}", updated_data, timeout=60*60)
                 cache.delete(f"user_posts:{request.user.id}")
+                cache.delete(f"user_drafts:{request.user.id}")
                 invalidate_cache(Post)
 
                 return Response(updated_data, status=status.HTTP_200_OK)

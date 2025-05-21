@@ -165,6 +165,7 @@ class GetUserByIdView(APIView):
                 "is_active": user.is_active,
                 "is_staff": user.is_staff,
                 "is_administrator": user.is_administrator,
+                "is_superadministrator": user.is_superadministrator,
                 "is_moderator": user.is_moderator,
                 "is_community_manager": user.is_community_manager,
                 "is_client": user.is_client,
@@ -838,6 +839,7 @@ class ListUsers(APIView):
                     role
                     for role, has_role in {
                         "administrator": user.is_administrator,
+                        "superadministrator": user.is_superadministrator,
                         "moderator": user.is_moderator,
                         "community_manager": user.is_community_manager,
                         "client": user.is_client,
@@ -894,45 +896,6 @@ class AssignedCMsToModeratorView(APIView):
             cm_data.append(data)
 
         return Response(cm_data, status=status.HTTP_200_OK)
-
-
-class GetUserByIdView(APIView):
-    
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request, user_id):
-        try:
-            user = User.objects.get(pk=user_id)
-            data = {
-                "id": user.id,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "phone_number": user.phone_number,
-                "email": user.email,
-                "is_staff": user.is_staff,
-                "is_administrator": user.is_administrator,
-                "is_moderator": user.is_moderator,
-                "is_community_manager": user.is_community_manager,
-                "is_client": user.is_client,
-            }
-            
-            # Add related information based on role
-            if user.is_client and user.assigned_moderator:
-                data["assigned_moderator"] = user.assigned_moderator.full_name
-            elif user.is_moderator:
-                assigned_cms = user.assigned_communitymanagers.all()
-                data["assigned_communitymanagers"] = [
-                    {"id": cm.id, "full_name": cm.full_name}
-                    for cm in assigned_cms
-                ] if assigned_cms else []
-            
-            return Response(data, status=status.HTTP_200_OK)
-            
-        except User.DoesNotExist:
-            return Response(
-                {"error": "User not found"}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
 
 class AssignModeratorToClientView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]  # <-- Everyone can access this view
