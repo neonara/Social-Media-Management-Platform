@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 from datetime import timedelta
-from csp.constants import SELF
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -18,7 +17,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-default-dev-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+DEBUG =True
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -37,7 +36,6 @@ CACHES = {
 # Application definition
 
 INSTALLED_APPS = [
-    'csp',
     'apps.accounts',         
     'apps.content',           
     # 'apps.planning',          
@@ -59,17 +57,19 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'csp.middleware.CSPMiddleware', 
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    #'apps.core.middleware.MediaResponseHeadersMiddleware',
 ]
-
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1048576000  # 1000 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 1048576000  # 1000 MB
 # CSRF Settings
 CSRF_COOKIE_SAMESITE = 'Lax'  # Use 'None' if using HTTPS
 CSRF_COOKIE_SECURE = False    # Set to True in production with HTTPS
@@ -107,20 +107,36 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
-#csp
 CONTENT_SECURITY_POLICY = {
-    "EXCLUDE_URL_PREFIXES": ["/admin"],
-    "DIRECTIVES": {
-        "default-src": [SELF, "*localhost:3000"],
-        "script-src": [SELF, "js.cdn.com/localhost:3000/"],
-        "img-src": [SELF, "data:", "localhost:3000"],
-    },
+    'DIRECTIVES': {
+        'default-src': (
+            "'self'",
+            'http://localhost:3000',
+            'http://localhost:8000',
+        ),
+        'img-src': (
+            "'self'",
+            'data:',
+            'http://localhost:8000',
+        ),
+        'media-src': (
+            "'self'",
+            'data:',
+            'http://localhost:8000',
+        ),
+        'script-src': (
+            "'self'",
+            'http://localhost:3000',
+            'http://localhost:8000',
+        ),
+    }
 }
 
 # CSRF Trusted Origins
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'http://127.0.0.1:8000',
 ]
 WILL_MIGRATE = False
 ROOT_URLCONF = 'social_media_management.urls'
@@ -128,7 +144,7 @@ ROOT_URLCONF = 'social_media_management.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [os.path.join(BASE_DIR)],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -204,9 +220,16 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
+STATIC_URL = '/static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media') 
 
-STATIC_URL = 'static/'
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'static'),  # Optional: for custom static dirs
+]
 
+# For WhiteNoise compression (optional but recommended)
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
@@ -247,10 +270,14 @@ SESSION_CACHE_ALIAS = "default"
 SESSION_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SECURE = False  # Set to True in production
 
+FACEBOOK_GRAPH_API_VERSION = 'v21.0'
 FACEBOOK_APP_ID = os.getenv("FACEBOOK_APP_ID")
 FACEBOOK_APP_SECRET = os.getenv("FACEBOOK_APP_SECRET")
-FACEBOOK_REDIRECT_URI = os.getenv("FACEBOOK_REDIRECT_URI")
-FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic"
+FACEBOOK_REDIRECT_URI = "http://localhost:8000/api/facebook/callback/"
+FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement,email,public_profile"
+
+INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,pages_show_list"
+INSTAGRAM_REDIRECT_URI = "http://localhost:8000/api/instagram/callback/"
 
 CHANNEL_LAYERS = {
     "default": {
@@ -261,8 +288,8 @@ CHANNEL_LAYERS = {
         }
     }
 
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'  # or use 'host.docker.internal' if Redis is in Docker
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'  
 CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
-CELERY_TIMEZONE = 'UTC'  # or your local timezone
+CELERY_TIMEZONE = 'UTC'

@@ -43,6 +43,5 @@ urlpatterns = [
     path('clients/assigned/', AssignedClientsView.as_view(), name='assigned-clients'),
     
     path('moderators/createCM/', CreateCMView.as_view(), name='create-community-manager'),
-    path('user/profile/', CurrentUserView.as_view(), name='current_user'),
 
 ]

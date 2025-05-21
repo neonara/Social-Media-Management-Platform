@@ -307,7 +307,7 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         uid = urlsafe_base64_encode(force_bytes(user.pk))
         reset_link = f"http://localhost:3000/reset-password-confirm/{uid}/{token}/"
 
-        send_mail(
+        send_celery_email(
             "Password Reset Request",
             f"Click the link below to reset your password:\n\n{reset_link}",
             "noreply@yourapp.com",
@@ -403,7 +403,7 @@ class RemoveCMsFromClientSerializer(serializers.Serializer):
 class GetUserSerializer(serializers.ModelSerializer):
     class Meta:
         model=User
-        fields = ['id', 'full_name', 'first_name', 'last_name', 'email', 'is_administrator', 'is_moderator', 'is_community_manager', 'is_client', 'is_verified', 'phone_number']
+        fields = ['id', 'full_name', 'first_name', 'last_name', 'email', 'is_administrator', 'is_superadministrator', 'is_moderator', 'is_community_manager', 'is_client', 'is_verified', 'phone_number']
         
         extra_kwargs = {
             'user_image': {'required': False},
@@ -412,7 +412,7 @@ class GetUserSerializer(serializers.ModelSerializer):
         
     def validate(self, data):
         """Ensure only one role is set to True."""
-        roles = ['is_administrator', 'is_moderator', 'is_community_manager', 'is_client']
+        roles = ['is_administrator', 'is_superadministrator', 'is_moderator', 'is_community_manager', 'is_client']
         role_values = [data.get(role, False) for role in roles]
 
         if sum(role_values) > 1:

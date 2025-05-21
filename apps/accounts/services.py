@@ -16,6 +16,7 @@ def build_user_data(user):
         "email": user.email,
         "image": user.user_image.url if user.user_image else None,
         "is_administrator": user.is_administrator,
+        "is_superadministrator": user.is_superadministrator,
         "is_moderator": user.is_moderator,
         "is_community_manager": user.is_community_manager,
         "is_client": user.is_client,

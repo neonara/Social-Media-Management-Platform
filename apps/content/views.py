@@ -65,7 +65,8 @@ def invalidate_cache(model, pk=None):
     ]
     for key in keys:
         cache.delete(key)
-        
+  
+#view classes     
 class CreatePostView(APIView):
     permission_classes = [IsAuthenticated, IsModeratorOrCM]
 
@@ -132,12 +133,15 @@ class CreatePostView(APIView):
         if serializer.is_valid():
             try:
                 post = serializer.save(creator=request.user)
+                scheduled_for = post.get('scheduled_for')
+                if scheduled_for:
+                    scheduled_for = timezone.datetime.strptime(scheduled_for, "%Y-%m-%dT%H:%M:%S.%fZ")
 
                 # Notify the client about the post creation
                 notify_user(
                     user=client,
                     title="Post is created",
-                    message=f"A post has been created in your pages and scheduled for {post.scheduled_for}",
+                    message=f"A post has been created in your pages and scheduled for {scheduled_for}",
                     type="content"
                 )
                 print(f"Notification sent to {client}")
@@ -145,7 +149,7 @@ class CreatePostView(APIView):
                 # Send email asynchronously using Celery
                 send_celery_email.delay(
                     'Post is created',
-                    f'Hello {client.full_name or client.email}, A post has been created in your pages and scheduled for {post.scheduled_for}',
+                    f'Hello {client.full_name or client.email}, A post has been created in your pages and scheduled for {scheduled_for}',
                     client.email
                 )
 
@@ -173,6 +177,7 @@ class CreatePostView(APIView):
         
         allowed_types = [
             'image/jpeg', 
+            'image/jpg', 
             'image/png', 
             'video/mp4', 
             'video/quicktime'
@@ -230,6 +235,7 @@ class UpdatePostToDraftView(APIView):
             cache.delete(f"post:{post_id}")
             cache.delete(f"post_detail:{post_id}")
             cache.delete(f"user_posts:{request.user.id}")
+            cache.delete(f"user_drafts:{request.user.id}")  # <-- Add this line
             invalidate_cache(Post, post_id)
 
             # Serialize the updated post
@@ -254,19 +260,22 @@ class ListPostsView(APIView):
     def get(self, request):
         cache_key = f"user_posts:{request.user.id}"
         cached_data = cache.get(cache_key)
-        
+
         if cached_data is None:
+            # Fetch posts with related client and creator objects
             posts = Post.objects.filter(
                 models.Q(creator=request.user) |
                 models.Q(client=request.user) |
                 models.Q(creator__assigned_moderator=request.user) |
                 models.Q(creator__assigned_communitymanagers=request.user)
             ).distinct().select_related('client', 'creator').prefetch_related('media')
-            
+
+            # Serialize the posts with context
             serializer = PostSerializer(posts, many=True, context={'request': request})
             cached_data = serializer.data
-            cache.set(cache_key, cached_data, timeout=60*10)  # 10 minutes
-        
+
+            # Cache the serialized data
+            cache.set(cache_key, cached_data, timeout=60 * 10)  
         return Response(cached_data, status=status.HTTP_200_OK)
 
 class UpdatePostView(APIView):
@@ -321,6 +330,7 @@ class UpdatePostView(APIView):
                 cache.set(f"post:{post_id}", updated_data, timeout=60*60)
                 cache.set(f"post_detail:{post_id}", updated_data, timeout=60*60)
                 cache.delete(f"user_posts:{request.user.id}")
+                cache.delete(f"user_drafts:{request.user.id}")
                 invalidate_cache(Post)
 
                 return Response(updated_data, status=status.HTTP_200_OK)
@@ -500,3 +510,8 @@ class DeletePostView(APIView):
         posts = Post.objects.filter(client=client)
         serializer = PostSerializer(posts, many=True, context={'request': request})
         return Response(serializer.data)
+    
+
+    
+    
+    

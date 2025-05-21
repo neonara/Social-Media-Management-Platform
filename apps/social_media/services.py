@@ -4,18 +4,15 @@ import requests
 import requests
 from django.conf import settings
 
-def get_facebook_auth_url():
-    return (
-        f"https://www.facebook.com/v19.0/dialog/oauth?"
-        f"client_id={settings.FACEBOOK_APP_ID}&redirect_uri={settings.FACEBOOK_REDIRECT_URI}"
-        f"&scope={settings.FACEBOOK_SCOPES}&response_type=code"
-    )
+FB_APP_ID = settings.FACEBOOK_APP_ID
+FB_REDIRECT_URI = settings.FACEBOOK_REDIRECT_URI
+GRAPH_API_VERSION = settings.FACEBOOK_GRAPH_API_VERSION
 
 def exchange_code_for_access_token(code):
-    url = "https://graph.facebook.com/v19.0/oauth/access_token"
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/oauth/access_token"
     params = {
-        "client_id": settings.FACEBOOK_APP_ID,
-        "redirect_uri": settings.FACEBOOK_REDIRECT_URI,
+        "client_id": FB_APP_ID,
+        "redirect_uri": FB_REDIRECT_URI,
         "client_secret": settings.FACEBOOK_APP_SECRET,
         "code": code
     }
@@ -24,10 +21,10 @@ def exchange_code_for_access_token(code):
     return response.json()["access_token"]
 
 def extend_to_long_lived_token(short_token):
-    url = "https://graph.facebook.com/v19.0/oauth/access_token"
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/oauth/access_token"
     params = {
         "grant_type": "fb_exchange_token",
-        "client_id": settings.FACEBOOK_APP_ID,
+        "client_id": FB_APP_ID,
         "client_secret": settings.FACEBOOK_APP_SECRET,
         "fb_exchange_token": short_token,
     }
@@ -36,7 +33,7 @@ def extend_to_long_lived_token(short_token):
     return response.json()["access_token"]
 
 def fetch_user_pages(long_token):
-    url = "https://graph.facebook.com/v19.0/me/accounts"
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/me/accounts"
     response = requests.get(url, params={"access_token": long_token})
     response.raise_for_status()
     return response.json()["data"]
@@ -57,7 +54,7 @@ def publish_to_facebook(post, page):
 
 def get_instagram_id(page):
     response = requests.get(
-        f"https://graph.facebook.com/v19.0/{page.page_id}?fields=instagram_business_account&access_token={page.access_token}"
+        f"https://graph.facebook.com/{GRAPH_API_VERSION}/{page.page_id}?fields=instagram_business_account&access_token={page.access_token}"
     )
     if response.ok:
         return response.json().get("instagram_business_account", {}).get("id")
@@ -73,7 +70,7 @@ def publish_to_instagram(post, page):
         raise Exception("No media URL found for Instagram.")
 
     create_media = requests.post(
-        f"https://graph.facebook.com/v19.0/{ig_id}/media",
+        f"https://graph.facebook.com/{GRAPH_API_VERSION}/{ig_id}/media",
         data={
             "image_url": media_url,
             "caption": post.description,
@@ -86,7 +83,7 @@ def publish_to_instagram(post, page):
     creation_id = create_media.json()["id"]
 
     publish = requests.post(
-        f"https://graph.facebook.com/v19.0/{ig_id}/media_publish",
+        f"https://graph.facebook.com/{GRAPH_API_VERSION}/{ig_id}/media_publish",
         data={
             "creation_id": creation_id,
             "access_token": page.access_token
@@ -125,4 +122,3 @@ def publish_to_linkedin(post, page):
     if response.ok:
         return response.json().get("id")
     raise Exception(f"LinkedIn error: {response.text}")
- 

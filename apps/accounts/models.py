@@ -47,20 +47,24 @@ class User(AbstractUser):
         limit_choices_to={'is_moderator': True},
         help_text="The Moderator assigned to this Client"
     )
+
     assigned_communitymanagers = models.ManyToManyField(
         'self',
         blank=True,
-        related_name='assigned_moderators',
+        related_name='moderators',
         limit_choices_to={'is_community_manager': True},
-        symmetrical=False
+        symmetrical=False,
+        help_text="The Community Managers assigned to this Moderator"
     )
-    assigned_communitymanagerstoclient = models.ManyToManyField(
-    'self',
-    blank=True,
-    symmetrical=False,
-    related_name='assigned_moderator_for_client',
-    limit_choices_to={'is_cm': True})
 
+    assigned_communitymanagerstoclient = models.ManyToManyField(
+        'self',
+        blank=True,
+        related_name='clients',
+        limit_choices_to={'is_community_manager': True},
+        symmetrical=False,
+        help_text="The Community Managers assigned to this Client"
+    )
     
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['first_name', 'last_name']

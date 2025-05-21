@@ -11,6 +11,7 @@ channels>=4.0.0
 django-redis==5.4
 channels_redis==4.2.0
 daphne
+whitenoise
 
 # Support libraries
 asgiref==3.8.1
