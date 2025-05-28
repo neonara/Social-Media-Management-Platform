@@ -1,7 +1,6 @@
 import json
 import requests
 
-import requests
 from django.conf import settings
 
 FB_APP_ID = settings.FACEBOOK_APP_ID
@@ -100,9 +99,29 @@ def publish_to_linkedin(post, page):
         "Content-Type": "application/json",
         "X-Restli-Protocol-Version": "2.0.0"
     }
-
+    # Determine if this is a person or organization profile
+    # For personal profiles, the author should be "urn:li:person:{page_id}"
+    # For organization/company pages, the author should be "urn:li:organization:{page_id}"
+    try:
+        # Try to get person/organization info to determine the correct author type
+        profile_check_url = f"https://api.linkedin.com/v2/me"
+        profile_check = requests.get(profile_check_url, headers={"Authorization": f"Bearer {page.access_token}"})
+        profile_data = profile_check.json()
+        
+        # Default to person if no specific indicators found
+        author_type = "person"
+        author_id = page.page_id
+        
+        # Build the appropriate author field
+        author = f"urn:li:{author_type}:{author_id}"
+        
+    except Exception as e:
+        # If there's an error checking the profile type, default to person
+       
+        author = f"urn:li:person:{page.page_id}"
+    
     content = {
-        "author": f"urn:li:organization:{page.page_id}",
+        "author": author,
         "lifecycleState": "PUBLISHED",
         "specificContent": {
             "com.linkedin.ugc.ShareContent": {
@@ -118,7 +137,6 @@ def publish_to_linkedin(post, page):
         headers=headers,
         data=json.dumps(content)
     )
-
     if response.ok:
         return response.json().get("id")
     raise Exception(f"LinkedIn error: {response.text}")

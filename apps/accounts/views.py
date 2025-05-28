@@ -410,30 +410,32 @@ class UserLoginView(APIView):
 
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data, context={'request': request})
+        remember_me = request.data.get("remember_me", False)
+        
+        # Add remember_me to the context so the serializer can use it
+        serializer.context['remember_me'] = remember_me
+        
         if serializer.is_valid():
-            remember_me = request.data.get("remember_me", False)
-
-            # Set token expiration based on "remember me"
-            if remember_me:
-                api_settings.REFRESH_TOKEN_LIFETIME = timedelta(days=30)  # Extend refresh token lifetime
-            else:
-                api_settings.REFRESH_TOKEN_LIFETIME = timedelta(days=1)  # Default refresh token lifetime
-
+            # Cookie expiration settings
+            cookie_max_age = 30 * 24 * 60 * 60 if remember_me else None  # 30 days or session cookie
+            
             response = Response(serializer.validated_data, status=status.HTTP_200_OK)
             response.set_cookie(
                 "access_token",
                 serializer.validated_data["access_token"],
                 httponly=True,
                 samesite="Lax",
+                max_age=cookie_max_age
             )
             response.set_cookie(
                 "refresh_token",
                 serializer.validated_data["refresh_token"],
                 httponly=True,
                 samesite="Lax",
+                max_age=cookie_max_age
             )
-            return response
-
+            return response  # Return the success response here
+            
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
     
 class LogoutUserView(APIView):
@@ -937,7 +939,8 @@ class AssignModeratorToClientView(APIView):
             send_celery_email.delay(
                 'You have been assigned as a moderator',
                 f'Hello {moderator.full_name or moderator.email},\n\nYou have been assigned as a moderator for client {client.full_name or client.email}. Please review the client details and take the necessary actions.\n\nBest regards,\nAdmin',
-                moderator.email
+                [moderator.email],
+                fail_silently=False
             )
 
             return Response({"message": f"Moderator {moderator.email} assigned to client {client.email}."})
@@ -984,7 +987,8 @@ class AssignCommunityManagerToModeratorView(APIView):
             send_celery_email.delay(
                 'You have been assigned to a moderator',
                 f'Hello {cm.full_name or cm.email},\n\nYou have been assigned to Moderator {moderator.full_name or moderator.email}. Please review and collaborate.\n\nBest regards,\nAdmin',
-                cm.email
+                [cm.email],
+                fail_silently=False
             )
 
             return Response({"message": f"Community Manager {cm.email} assigned to Moderator {moderator.email}."})
@@ -1014,7 +1018,7 @@ class RemoveCommunityManagerFromModeratorView(APIView):
                 notify_user(
                     user=moderator,
                     title="Community Manager Removed",
-                    message=f"Community Manager {cm_to_remove.full_name or cm.to_remove.email} has been removed from your assignments.",
+                    message=f"Community Manager {cm_to_remove.full_name or cm_to_remove.email} has been removed from your assignments.",
                     type="removal"
                 )
 

@@ -140,7 +140,6 @@ class CreateUserSerializer(serializers.ModelSerializer):
             send_celery_email(
                 'Account Created - Social Media Management Platform',
                 email_body,
-                "achref.maarfi0@gmail.com",
                 [email],
                 fail_silently=False,
             )
@@ -205,7 +204,6 @@ class CreateCMSerializer(serializers.ModelSerializer):
             send_celery_email(
                 'Account Created - Social Media Management Platform',
                 email_body,
-                "achref.maarfi0@gmail.com",
                 [email],
                 fail_silently=False,
             )
@@ -310,7 +308,6 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         send_celery_email(
             "Password Reset Request",
             f"Click the link below to reset your password:\n\n{reset_link}",
-            "noreply@yourapp.com",
             [email],
             fail_silently=False,
         )

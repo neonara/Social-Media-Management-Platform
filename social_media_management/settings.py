@@ -183,9 +183,14 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=90),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+SESSION_COOKIE_AGE = 3600  # Regular session (1 hour in seconds)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Default behavior for non-remember-me
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -278,6 +283,11 @@ FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,page
 
 INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,pages_show_list"
 INSTAGRAM_REDIRECT_URI = "http://localhost:8000/api/instagram/callback/"
+
+LINKEDIN_REDIRECT_URI = "http://localhost:8000/api/linkedin/callback/"
+LINKEDIN_SCOPES = "profile,email,w_member_social"
+LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
+LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
 
 CHANNEL_LAYERS = {
     "default": {
