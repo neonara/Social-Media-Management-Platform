@@ -198,13 +198,7 @@ class FetchEmails(APIView):
         user_emails = [{"email": user.email} for user in users]
         return Response(user_emails, status=200)
     
-class CurrentUserView(APIView):
-    permission_classes = [IsAuthenticated]
-    
-    @method_decorator(cache_page(300))  # Cache for 5 minutes
-    def get(self, request):
-        serializer = GetUserSerializer(request.user)
-        return Response(serializer.data)
+
 
 class AssignedCMsToModeratorView(APIView):
     permission_classes = [IsAuthenticated]
@@ -446,13 +440,41 @@ class LogoutUserView(APIView):
         if not refresh_token:
             return Response({"error": "No refresh token found"}, status=status.HTTP_400_BAD_REQUEST)
 
+        user_id = None
         try:
             token = RefreshToken(refresh_token)
+            # Extract user ID before blacklisting the token
+            user_id = token.payload.get('user_id')
             token.blacklist()  # Blacklist token if valid
         except TokenError as e:
             # Handle token expiration or invalid token
             if "Token is invalid or expired" not in str(e):
                 return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Clear user cache if we have a user_id
+        if user_id:
+            from apps.accounts.services import clear_user_cache
+            clear_user_cache(user_id)
+            
+            # Also clear any Redis cache patterns for extra safety
+            try:
+                from django_redis import get_redis_connection
+                redis_conn = get_redis_connection("default")
+                
+                # Clear cache patterns related to the user
+                cache_patterns = [
+                    f"*:user:{user_id}:*",
+                    f"*:user_data:{user_id}*",
+                    f"*:views.decorators.cache.cache_page.*user*{user_id}*",
+                    f"*:current-user*"
+                ]
+                
+                for pattern in cache_patterns:
+                    for key in redis_conn.keys(pattern):
+                        redis_conn.delete(key)
+            except Exception as e:
+                # Log but don't interrupt logout process
+                print(f"Error clearing Redis cache during logout: {str(e)}")
 
         response = Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
         response.delete_cookie("access_token")  # Delete cookies
@@ -1107,7 +1129,8 @@ class AdminDeleteUserView(APIView):
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
-        user_data = get_cached_user_data(request.user)  # Use cached data
+        # Use the cached user data function - it will get fresh data if cache is cleared
+        user_data = get_cached_user_data(request.user)
         return Response(user_data)
 
 class GetUserProfileView(APIView):

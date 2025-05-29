@@ -398,14 +398,22 @@ class RemoveCMsFromClientSerializer(serializers.Serializer):
     
 #get
 class GetUserSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+    
     class Meta:
         model=User
-        fields = ['id', 'full_name', 'first_name', 'last_name', 'email', 'is_administrator', 'is_superadministrator', 'is_moderator', 'is_community_manager', 'is_client', 'is_verified', 'phone_number']
+        fields = ['id', 'full_name', 'first_name', 'last_name', 'email','phone_number', 'user_image', 'image', 'is_administrator', 'is_superadministrator', 'is_moderator', 'is_community_manager', 'is_client', 'is_verified' ]
         
         extra_kwargs = {
             'user_image': {'required': False},
             'email':{'required': False},
         }
+    
+    def get_image(self, obj):
+        """Return the image URL if it exists"""
+        if obj.user_image:
+            return obj.user_image.url
+        return None
         
     def validate(self, data):
         """Ensure only one role is set to True."""

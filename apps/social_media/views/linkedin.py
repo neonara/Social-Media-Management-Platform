@@ -1,9 +1,12 @@
 import requests
-import logging  # Add logging import
+import logging
+import urllib.request
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import redirect
+from django.core.files import File
+from django.core.files.temp import NamedTemporaryFile
 
 from apps.social_media.models import SocialPage
 from apps.social_media.serializers import SocialPageSerializer
@@ -61,10 +64,17 @@ class LinkedInConnectView(APIView):
         # User is now authenticated, generate state parameter
         state = str(request.user.id)
         
+        # Check if we should update the profile picture
+        update_profile = request.query_params.get('update_profile', 'false')
+        
+        # Build the LinkedIn authorization URL
+        # Include the update_profile parameter in the state to pass it through the OAuth flow
+        full_state = f"{state}:{update_profile}" if update_profile.lower() == 'true' else state
+        
         url = (
             f"https://www.linkedin.com/oauth/v2/authorization?"
             f"client_id={LI_CLIENT_ID}&redirect_uri={LI_REDIRECT_URI}&"
-            f"scope={LI_SCOPES}&response_type=code&state={state}"
+            f"scope={LI_SCOPES}&response_type=code&state={full_state}"
         )
         return redirect(url)
 
@@ -105,20 +115,34 @@ class LinkedInCallbackView(APIView):
                 logger.error("LinkedIn callback: Failed to retrieve access token")
                 return redirect("http://localhost:3000/settings?error=Failed_to_retrieve_access_token")
                 
-            # Step 2: Get user profile info with expanded fields
-            profile_url = "https://api.linkedin.com/v2/me?projection=(id,localizedFirstName,localizedLastName,profilePicture(displayImage~:playableStreams))"
+            # Step 2: Get user profile using the OpenID Connect userinfo endpoint
+            # This is the recommended endpoint for getting profile information in the OIDC flow
+            userinfo_url = "https://api.linkedin.com/v2/userinfo"
             headers = {"Authorization": f"Bearer {access_token}"}
             
-            profile_response = requests.get(profile_url, headers=headers)
-            logger.info(f"LinkedIn profile response status: {profile_response.status_code}")
+            profile_response = requests.get(userinfo_url, headers=headers)
+            logger.info(f"LinkedIn userinfo response status: {profile_response.status_code}")
             
             profile_res = profile_response.json()
-            logger.info(f"LinkedIn profile data: {profile_res}")
+            logger.info(f"LinkedIn userinfo data: {profile_res}")
             
-            # Extract profile information
-            linkedin_id = profile_res.get("id", "")
-            first_name = profile_res.get("localizedFirstName", "")
-            last_name = profile_res.get("localizedLastName", "")
+            # Extract profile information from the OIDC userinfo response
+            logger.info(f"Extracting LinkedIn profile data from userinfo response: {profile_res}")
+            linkedin_id = profile_res.get("sub", "")  # 'sub' is the user identifier in OIDC
+            first_name = profile_res.get("given_name", "")  # OIDC uses given_name
+            last_name = profile_res.get("family_name", "")  # OIDC uses family_name
+            profile_picture = profile_res.get("picture", "")
+            
+            # Log detailed profile extraction
+            logger.info(f"Extracted LinkedIn ID: '{linkedin_id}'")
+            logger.info(f"Extracted first name: '{first_name}'")
+            logger.info(f"Extracted last name: '{last_name}'")
+            
+            # Check if any key data is missing
+            if not linkedin_id:
+                logger.error("LinkedIn profile ID is missing from API response")
+            if not first_name and not last_name:
+                logger.warning("LinkedIn profile name is missing from API response")
             
             # Check if email scope was included and fetch email if available
             email_response = None
@@ -134,25 +158,113 @@ class LinkedInCallbackView(APIView):
             logger.info(f"LinkedIn profile extracted data - ID: {linkedin_id}, Name: {first_name} {last_name}")
             
             try:
-                # Check if state contains a valid user ID
+                # Check if state contains a valid user ID and possibly update_profile param
                 if state and state != "None":
+                    # Extract user ID and potentially update_profile flag from state
+                    update_profile = 'false'
+                    if ':' in state:
+                        state_parts = state.split(':', 1)
+                        state = state_parts[0]
+                        update_profile = state_parts[1]
+                    
                     from django.contrib.auth import get_user_model
                     User = get_user_model()
                     user = User.objects.get(id=state)
                     
+                    # Store update_profile in request.GET for later use
+                    request.GET = request.GET.copy()
+                    request.GET['update_profile'] = update_profile
+                    
                     logger.info(f"Found user with ID {state}: {user.email}")
                     
                     # Create or update the SocialPage for this user
+                    
+                    # Check if we have a valid LinkedIn ID
+                    if not linkedin_id:
+                        logger.error("LinkedIn ID is missing from the response - cannot create SocialPage")
+                        return redirect("http://localhost:3000/settings/?error=LinkedIn_profile_data_incomplete")
+                    
+                    # Prepare the name - use available data or fallback to default
+                    page_name = f"{first_name} {last_name}" if first_name or last_name else "LinkedIn User"
+                    logger.info(f"Using page_name: '{page_name}' for LinkedIn page")
+                    
+                    # Store the LinkedIn ID with the proper URN format required by LinkedIn API
+                    linkedin_urn = f"urn:li:person:{linkedin_id}"
+                    logger.info(f"Using LinkedIn URN: '{linkedin_urn}' for page_id")
+                    
+                    # Store additional profile info if available
+                    extra_permissions = {
+                        "expires_in": token_res.get('expires_in', 0),
+                        "profile_picture": profile_picture
+                    }
+                    
+                    logger.info(f"Creating/updating LinkedIn SocialPage with: ID={linkedin_urn}, Name={page_name}")
                     social_page, created = SocialPage.objects.update_or_create(
                         client=user,
                         platform="linkedin",
                         defaults={
-                            "page_id": linkedin_id,
-                            "page_name": f"{first_name} {last_name}",
+                            "page_id": linkedin_urn,  # Store the full URN instead of just the ID
+                            "page_name": page_name,
                             "access_token": access_token,
-                            "permissions": {"expires_in": token_res.get('expires_in', 0)}
+                            "permissions": extra_permissions
                         }
                     )
+                    
+                    # Update user information from LinkedIn profile data
+                    user_updated = False
+                    
+                    # Update user's first name from LinkedIn only if it's empty
+                    if first_name and (not user.first_name or user.first_name == ''):
+                        user.first_name = first_name
+                        user_updated = True
+                        logger.info(f"Updated user first name to '{first_name}'")
+                    else:
+                        logger.info(f"User already has first name set: '{user.first_name}', not updating from LinkedIn")
+                    
+                    # Update user's last name from LinkedIn only if it's empty
+                    if last_name and (not user.last_name or user.last_name == ''):
+                        user.last_name = last_name
+                        user_updated = True
+                        logger.info(f"Updated user last name to '{last_name}'")
+                    else:
+                        logger.info(f"User already has last name set: '{user.last_name}', not updating from LinkedIn")
+                    
+                    # Update user's profile picture if available and if user doesn't have one yet
+                    if profile_picture and not user.user_image:
+                        try:
+                            logger.info(f"Downloading profile picture from LinkedIn: {profile_picture}")
+                            import urllib.request
+                            from django.core.files import File
+                            from django.core.files.temp import NamedTemporaryFile
+                            import os
+                            
+                            # Download the profile picture
+                            img_temp = NamedTemporaryFile(delete=True)
+                            urllib.request.urlretrieve(profile_picture, img_temp.name)
+                            
+                            # Save it to the user model
+                            file_name = f"linkedin_profile_{user.id}.jpg"
+                            user.user_image.save(file_name, File(img_temp))
+                            user_updated = True
+                            logger.info(f"Successfully updated user profile picture from LinkedIn for user {user.id}")
+                        except Exception as e:
+                            logger.error(f"Failed to download LinkedIn profile picture: {str(e)}")
+                    elif profile_picture:
+                        logger.info(f"User already has a profile picture, not updating from LinkedIn for user {user.id}")
+                    else:
+                        logger.info(f"No profile picture available from LinkedIn for user {user.id}")
+                    
+                    # Save user model if any field was updated
+                    if user_updated:
+                        user.save()
+                        logger.info(f"Updated user profile with LinkedIn data for user ID {user.id}")
+                        
+                        # Simply clear the user cache - it will be regenerated fresh on next API call
+                        from apps.accounts.services import clear_user_cache
+                        clear_user_cache(user.id)
+                        logger.info(f"Cleared cache for user ID {user.id} - fresh data will be cached on next request")
+                    else:
+                        logger.info(f"No user profile updates needed for user ID {user.id}")
                     
                     logger.info(f"SocialPage {'created' if created else 'updated'} - page_id: {social_page.page_id}, page_name: {social_page.page_name}")
                     
@@ -176,6 +288,11 @@ class LinkedInDisconnectView(APIView):
     
     def post(self, request):
         deleted, _ = SocialPage.objects.filter(client=request.user, platform="linkedin").delete()
+        
+        # Clear user cache to ensure frontend gets the latest data after disconnecting
+        from apps.accounts.services import get_cached_user_data
+        get_cached_user_data(request.user, force_refresh=True)
+        
         return Response({"disconnected": deleted > 0})
 
 class LinkedInPageView(APIView):

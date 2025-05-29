@@ -23,19 +23,20 @@ def build_user_data(user):
         "is_verified": user.is_verified,
     }
 
-def get_cached_user_data(user):
+def get_cached_user_data(user, force_refresh=False):
     """
     Get user data with caching to improve performance
     
     Args:
         user: The user object to retrieve data for
+        force_refresh: If True, bypass the cache and get fresh data
         
     Returns:
         dict: Serialized user data
     """
-    # Check if data is in cache
+    # Check if data is in cache and we're not forcing a refresh
     cache_key = f"user_data:{user.id}"
-    cached_data = cache.get(cache_key)
+    cached_data = None if force_refresh else cache.get(cache_key)
     
     if cached_data is not None:
         return cached_data
@@ -56,6 +57,7 @@ def clear_user_cache(user_id):
     Args:
         user_id: ID of the user to clear cache for
     """
+    # Clear Django cache
     cache.delete(f"user_data:{user_id}")
     cache.delete(f"user_meta:{user_id}")
     cache.delete(f"user_fullname:{user_id}")
@@ -63,3 +65,27 @@ def clear_user_cache(user_id):
     cache.delete(f"user_stats:{user_id}")
     cache.delete(f"user_notifications:{user_id}")
     cache.delete(f"user_unread_count:{user_id}")
+    
+    # Also clear Redis cache if available
+    try:
+        from django_redis import get_redis_connection
+        redis_conn = get_redis_connection("default")
+        
+        # Clear cache patterns related to the user
+        cache_patterns = [
+            f"*:user:{user_id}:*",
+            f"*:user_data:{user_id}*",
+            f"*:views.decorators.cache.cache_page.*user*{user_id}*",
+            f"*:current-user*"
+        ]
+        
+        for pattern in cache_patterns:
+            keys = redis_conn.keys(pattern)
+            if keys:
+                for key in keys:
+                    redis_conn.delete(key)
+    except Exception as e:
+        # Log the error but continue
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Error clearing Redis cache: {str(e)}")

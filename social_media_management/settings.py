@@ -285,7 +285,7 @@ INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,pages_show_list"
 INSTAGRAM_REDIRECT_URI = "http://localhost:8000/api/instagram/callback/"
 
 LINKEDIN_REDIRECT_URI = "http://localhost:8000/api/linkedin/callback/"
-LINKEDIN_SCOPES = "profile,email,w_member_social"
+LINKEDIN_SCOPES = "openid,profile,email,w_member_social"  # Added openid scope for OIDC
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
 
@@ -303,3 +303,14 @@ CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Schedule
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'check-scheduled-posts': {
+        'task': 'apps.social_media.tasks.check_and_publish_scheduled_posts',
+        'schedule': 60.0,  # Run every 60 seconds (1 minute)
+        'options': {'expires': 59}  # Expire task if not executed within 59 seconds
+    },
+}
