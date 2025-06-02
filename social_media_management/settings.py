@@ -279,13 +279,14 @@ FACEBOOK_GRAPH_API_VERSION = 'v21.0'
 FACEBOOK_APP_ID = os.getenv("FACEBOOK_APP_ID")
 FACEBOOK_APP_SECRET = os.getenv("FACEBOOK_APP_SECRET")
 FACEBOOK_REDIRECT_URI = "http://localhost:8000/api/facebook/callback/"
-FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement,email,public_profile"
+FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement,business_management,pages_manage_metadata,pages_manage_instant_articles,email,public_profile"
 
-INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,pages_show_list"
+INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,pages_show_list,business_management"
 INSTAGRAM_REDIRECT_URI = "http://localhost:8000/api/instagram/callback/"
 
 LINKEDIN_REDIRECT_URI = "http://localhost:8000/api/linkedin/callback/"
-LINKEDIN_SCOPES = "openid,profile,email,w_member_social"  # Added openid scope for OIDC
+# Updated LinkedIn scopes for Community Management API and organization management
+LINKEDIN_SCOPES = "openid,profile,email,w_member_social,rw_organization_admin,w_organization_social,r_organization_social,w_organization_social_feed,r_organization_social_feed"
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
 

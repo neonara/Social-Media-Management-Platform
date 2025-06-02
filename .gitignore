@@ -29,3 +29,6 @@ venv
 Thumbs.db
 
 media/media
+media/accounts
+.commands/
+celerybeat-schedule
