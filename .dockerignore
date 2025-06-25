@@ -1,0 +1,47 @@
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# SQLite database (development only)
+db.sqlite3
+
+# Logs
+*.log
+
+# Cache
+.cache/
+
+# Celery beat schedule
+celerybeat-schedule
+
+# Docker (prevent copying these into the image)
+Dockerfile
+.dockerignore
+
+# Environment files
+.env.prod
+.env
+

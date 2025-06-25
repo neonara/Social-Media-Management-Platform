@@ -10,9 +10,6 @@
 **/*.pyo
 *.pyd
 
-# Django stuff
-**/migrations/
-
 # Environment variables
 .env
 .venv/

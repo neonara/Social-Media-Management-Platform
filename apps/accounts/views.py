@@ -1,6 +1,6 @@
 from apps.accounts.tasks import send_celery_email
 from apps.accounts.models import User
-from social_media_management import settings
+from planit import settings
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
 

@@ -1,13 +1,14 @@
 import os
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'social_media_management.settings')
+# Updated project name to 'planit'
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'planit.settings')
 import django
 django.setup()  # ← This line is crucial when doing custom imports (like TokenAuthMiddleware)
 
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
-from social_media_management.websocket_auth import TokenAuthMiddlewareStack
+from planit.websocket_auth import TokenAuthMiddlewareStack
 
 # Import routing configurations from all apps
 import apps.notifications.routing
