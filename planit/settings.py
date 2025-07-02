@@ -17,15 +17,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-default-dev-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG =True
+DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # settings.py
+REDIS_HOST = os.environ.get('REDIS_HOST', 'redis')
+REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",
+        "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
@@ -139,7 +142,7 @@ CSRF_TRUSTED_ORIGINS = [
     'http://127.0.0.1:8000',
 ]
 WILL_MIGRATE = False
-ROOT_URLCONF = 'social_media_management.urls'
+ROOT_URLCONF = 'planit.urls'
 
 TEMPLATES = [
     {
@@ -157,15 +160,15 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'social_media_management.wsgi.application'
-ASGI_APPLICATION = 'social_media_management.asgi.application'
+WSGI_APPLICATION = 'planit.wsgi.application'
+ASGI_APPLICATION = 'planit.asgi.application'
 
 
 # Database configuration
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'social_media_platform'),
+        'NAME': os.environ.get('DB_NAME', 'planit_db'),
         'USER': os.environ.get('DB_USER', 'postgres'),
         'PASSWORD': os.environ.get('DB_PASSWORD', 'root'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
@@ -183,9 +186,14 @@ REST_FRAMEWORK = {
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=90),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
+
+SESSION_COOKIE_AGE = 3600  # Regular session (1 hour in seconds)
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True  # Default behavior for non-remember-me
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -256,8 +264,7 @@ AUTH_USER_MODEL = 'accounts.User'
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": "redis://127.0.0.1:6379/1",  # or use redis://redis:6379/1 in Docker-only networks
-        # "LOCATION": "redis://host.docker.internal:6379/1",  # or use redis://redis:6379/1 in Docker-only networks
+        "LOCATION": f"redis://{REDIS_HOST}:{REDIS_PORT}/1",
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         }
@@ -274,22 +281,39 @@ FACEBOOK_GRAPH_API_VERSION = 'v21.0'
 FACEBOOK_APP_ID = os.getenv("FACEBOOK_APP_ID")
 FACEBOOK_APP_SECRET = os.getenv("FACEBOOK_APP_SECRET")
 FACEBOOK_REDIRECT_URI = "http://localhost:8000/api/facebook/callback/"
-FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement,email,public_profile"
+FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement,business_management,pages_manage_metadata,pages_manage_instant_articles,email,public_profile"
 
-INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,pages_show_list"
+INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,pages_show_list,business_management"
 INSTAGRAM_REDIRECT_URI = "http://localhost:8000/api/instagram/callback/"
+
+LINKEDIN_REDIRECT_URI = "http://localhost:8000/api/linkedin/callback/"
+# Updated LinkedIn scopes for Community Management API and organization management
+LINKEDIN_SCOPES = "openid,profile,email,w_member_social,rw_organization_admin,w_organization_social,r_organization_social,w_organization_social_feed,r_organization_social_feed"
+LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
+LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
 
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
         "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
+            "hosts": [(REDIS_HOST, int(REDIS_PORT))],
             }
         }
     }
 
-CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'  
-CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
+CELERY_BROKER_URL = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
+CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
+
+# Celery Beat Schedule
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'check-scheduled-posts': {
+        'task': 'apps.social_media.tasks.check_and_publish_scheduled_posts',
+        'schedule': 60.0,  # Run every 60 seconds (1 minute)
+        'options': {'expires': 59}  # Expire task if not executed within 59 seconds
+    },
+}

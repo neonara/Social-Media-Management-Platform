@@ -1,6 +1,6 @@
 from apps.accounts.tasks import send_celery_email
 from apps.accounts.models import User
-from social_media_management import settings
+from planit import settings
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
 
@@ -85,6 +85,7 @@ class ClientFetchModeratorAndCMsView(APIView):
                 "full_name": moderator.full_name,
                 "email": moderator.email,
                 "phone_number": moderator.phone_number,
+                "user_image": moderator.user_image.url if moderator.user_image else None,
             },
             "community_managers": [
                 {
@@ -92,6 +93,7 @@ class ClientFetchModeratorAndCMsView(APIView):
                     "full_name": cm.full_name,
                     "email": cm.email,
                     "phone_number": cm.phone_number,
+                    "user_image": cm.user_image.url if cm.user_image else None,
                 }
                 for cm in assigned_cms
             ],
@@ -134,6 +136,7 @@ class AssignedModeratorsAndClientsView(APIView):
                     "full_name": moderator.full_name,
                     "email": moderator.email,
                     "phone_number": moderator.phone_number,
+                    "user_image": moderator.user_image.url if moderator.user_image else None,
                 }
                 for moderator in assigned_moderators
             ],
@@ -143,6 +146,7 @@ class AssignedModeratorsAndClientsView(APIView):
                     "full_name": client.full_name,
                     "email": client.email,
                     "phone_number": client.phone_number,
+                    "user_image": client.user_image.url if client.user_image else None,
                 }
                 for client in assigned_clients
             ],
@@ -198,13 +202,7 @@ class FetchEmails(APIView):
         user_emails = [{"email": user.email} for user in users]
         return Response(user_emails, status=200)
     
-class CurrentUserView(APIView):
-    permission_classes = [IsAuthenticated]
-    
-    @method_decorator(cache_page(300))  # Cache for 5 minutes
-    def get(self, request):
-        serializer = GetUserSerializer(request.user)
-        return Response(serializer.data)
+
 
 class AssignedCMsToModeratorView(APIView):
     permission_classes = [IsAuthenticated]
@@ -215,6 +213,19 @@ class AssignedCMsToModeratorView(APIView):
         cm_data = []
 
         for cm in assigned_cms:
+            # Determine the primary role based on priority
+            role = "user"  # default
+            if cm.is_superuser:
+                role = "superadministrator"
+            elif cm.is_administrator:
+                role = "administrator"
+            elif cm.is_moderator:
+                role = "moderator"
+            elif cm.is_community_manager:
+                role = "community_manager"
+            elif cm.is_client:
+                role = "client"
+
             data = {
                 "id": cm.id,
                 "full_name": cm.full_name,
@@ -222,16 +233,8 @@ class AssignedCMsToModeratorView(APIView):
                 "phone_number": cm.phone_number,
                 "is_active": cm.is_active,
                 "is_staff": cm.is_staff,
-                "roles": [
-                    role
-                    for role, has_role in {
-                        "administrator": cm.is_administrator,
-                        "moderator": cm.is_moderator,
-                        "community_manager": cm.is_community_manager,
-                        "client": cm.is_client,
-                    }.items()
-                    if has_role
-                ],
+                "role": role,
+                "user_image": cm.user_image.url if cm.user_image else None,
                 # Add any other relevant CM information you want to display
             }
             cm_data.append(data)
@@ -273,8 +276,9 @@ class AssignedModeratorCommunityManagersView(APIView):
                 "id": cm.id,
                 "full_name": cm.full_name,
                 "email": cm.email,
+                "user_image": cm.user_image.url if cm.user_image else None,
                 "assigned_communitymanagerstoclient": [
-                    {"id": client.id, "full_name": client.full_name, "email": client.email}
+                    {"id": client.id, "full_name": client.full_name, "email": client.email, "user_image": client.user_image.url if client.user_image else None}
                     for client in cm.assigned_communitymanagerstoclient.all()
                 ]
             })
@@ -299,8 +303,9 @@ class AssignedModeratorClientsView(APIView):
                 "id": client.id,
                 "full_name": client.full_name,
                 "email": client.email,
+                "user_image": client.user_image.url if client.user_image else None,
                 "assigned_community_managers": [
-                    {"id": cm.id, "full_name": cm.full_name, "email": cm.email}
+                    {"id": cm.id, "full_name": cm.full_name, "email": cm.email, "user_image": cm.user_image.url if cm.user_image else None}
                     for cm in client.assigned_communitymanagerstoclient.all()
                 ]
             })
@@ -410,30 +415,32 @@ class UserLoginView(APIView):
 
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data, context={'request': request})
+        remember_me = request.data.get("remember_me", False)
+        
+        # Add remember_me to the context so the serializer can use it
+        serializer.context['remember_me'] = remember_me
+        
         if serializer.is_valid():
-            remember_me = request.data.get("remember_me", False)
-
-            # Set token expiration based on "remember me"
-            if remember_me:
-                api_settings.REFRESH_TOKEN_LIFETIME = timedelta(days=30)  # Extend refresh token lifetime
-            else:
-                api_settings.REFRESH_TOKEN_LIFETIME = timedelta(days=1)  # Default refresh token lifetime
-
+            # Cookie expiration settings
+            cookie_max_age = 30 * 24 * 60 * 60 if remember_me else None  # 30 days or session cookie
+            
             response = Response(serializer.validated_data, status=status.HTTP_200_OK)
             response.set_cookie(
                 "access_token",
                 serializer.validated_data["access_token"],
                 httponly=True,
                 samesite="Lax",
+                max_age=cookie_max_age
             )
             response.set_cookie(
                 "refresh_token",
                 serializer.validated_data["refresh_token"],
                 httponly=True,
                 samesite="Lax",
+                max_age=cookie_max_age
             )
-            return response
-
+            return response  # Return the success response here
+            
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
     
 class LogoutUserView(APIView):
@@ -444,13 +451,41 @@ class LogoutUserView(APIView):
         if not refresh_token:
             return Response({"error": "No refresh token found"}, status=status.HTTP_400_BAD_REQUEST)
 
+        user_id = None
         try:
             token = RefreshToken(refresh_token)
+            # Extract user ID before blacklisting the token
+            user_id = token.payload.get('user_id')
             token.blacklist()  # Blacklist token if valid
         except TokenError as e:
             # Handle token expiration or invalid token
             if "Token is invalid or expired" not in str(e):
                 return Response({"error": "Invalid token"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Clear user cache if we have a user_id
+        if user_id:
+            from apps.accounts.services import clear_user_cache
+            clear_user_cache(user_id)
+            
+            # Also clear any Redis cache patterns for extra safety
+            try:
+                from django_redis import get_redis_connection
+                redis_conn = get_redis_connection("default")
+                
+                # Clear cache patterns related to the user
+                cache_patterns = [
+                    f"*:user:{user_id}:*",
+                    f"*:user_data:{user_id}*",
+                    f"*:views.decorators.cache.cache_page.*user*{user_id}*",
+                    f"*:current-user*"
+                ]
+                
+                for pattern in cache_patterns:
+                    for key in redis_conn.keys(pattern):
+                        redis_conn.delete(key)
+            except Exception as e:
+                # Log but don't interrupt logout process
+                print(f"Error clearing Redis cache during logout: {str(e)}")
 
         response = Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
         response.delete_cookie("access_token")  # Delete cookies
@@ -816,7 +851,7 @@ class AssignedClientsView(APIView):
             )
 
         # Serialize the clients
-        client_data = [{"id": client.id, "name": client.full_name or client.email} for client in clients]
+        client_data = [{"id": client.id, "name": client.full_name or client.email, "user_image": client.user_image.url if client.user_image else None} for client in clients]
         return Response(client_data, status=status.HTTP_200_OK)  
     
 
@@ -827,25 +862,28 @@ class ListUsers(APIView):
         user_data = []
 
         for user in users:
+            # Determine the single role based on priority
+            role = None
+            if user.is_superadministrator:
+                role = "superadministrator"
+            elif user.is_administrator:
+                role = "administrator"
+            elif user.is_moderator:
+                role = "moderator"
+            elif user.is_community_manager:
+                role = "community_manager"
+            elif user.is_client:
+                role = "client"
+            else:
+                role = "user"  # Default role if none of the above
+
             data = {
                 "id": user.id,
                 "full_name": user.full_name,
                 "email": user.email,
                 "phone_number": user.phone_number,
-
-                "is_active": user.is_active,
-                "is_staff": user.is_staff,
-                "roles": [
-                    role
-                    for role, has_role in {
-                        "administrator": user.is_administrator,
-                        "superadministrator": user.is_superadministrator,
-                        "moderator": user.is_moderator,
-                        "community_manager": user.is_community_manager,
-                        "client": user.is_client,
-                    }.items()
-                    if has_role
-                ],
+                "user_image": user.user_image.url if user.user_image else None,
+                "role": role,  # Single role instead of array
             }
 
           
@@ -864,38 +902,6 @@ class ListUsers(APIView):
             user_data.append(data)
 
         return Response(user_data, status=status.HTTP_200_OK)
-
-class AssignedCMsToModeratorView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        moderator = request.user
-        assigned_cms = User.objects.filter(assigned_moderators=moderator)
-        cm_data = []
-
-        for cm in assigned_cms:
-            data = {
-                "id": cm.id,
-                "full_name": cm.full_name,
-                "email": cm.email,
-                "phone_number": cm.phone_number,
-                "is_active": cm.is_active,
-                "is_staff": cm.is_staff,
-                "roles": [
-                    role
-                    for role, has_role in {
-                        "administrator": cm.is_administrator,
-                        "moderator": cm.is_moderator,
-                        "community_manager": cm.is_community_manager,
-                        "client": cm.is_client,
-                    }.items()
-                    if has_role
-                ],
-                # Add any other relevant CM information you want to display
-            }
-            cm_data.append(data)
-
-        return Response(cm_data, status=status.HTTP_200_OK)
 
 class AssignModeratorToClientView(APIView):
     permission_classes = [IsAdminOrSuperAdmin]  # <-- Everyone can access this view
@@ -937,7 +943,8 @@ class AssignModeratorToClientView(APIView):
             send_celery_email.delay(
                 'You have been assigned as a moderator',
                 f'Hello {moderator.full_name or moderator.email},\n\nYou have been assigned as a moderator for client {client.full_name or client.email}. Please review the client details and take the necessary actions.\n\nBest regards,\nAdmin',
-                moderator.email
+                [moderator.email],
+                fail_silently=False
             )
 
             return Response({"message": f"Moderator {moderator.email} assigned to client {client.email}."})
@@ -984,7 +991,8 @@ class AssignCommunityManagerToModeratorView(APIView):
             send_celery_email.delay(
                 'You have been assigned to a moderator',
                 f'Hello {cm.full_name or cm.email},\n\nYou have been assigned to Moderator {moderator.full_name or moderator.email}. Please review and collaborate.\n\nBest regards,\nAdmin',
-                cm.email
+                [cm.email],
+                fail_silently=False
             )
 
             return Response({"message": f"Community Manager {cm.email} assigned to Moderator {moderator.email}."})
@@ -1014,7 +1022,7 @@ class RemoveCommunityManagerFromModeratorView(APIView):
                 notify_user(
                     user=moderator,
                     title="Community Manager Removed",
-                    message=f"Community Manager {cm_to_remove.full_name or cm.to_remove.email} has been removed from your assignments.",
+                    message=f"Community Manager {cm_to_remove.full_name or cm_to_remove.email} has been removed from your assignments.",
                     type="removal"
                 )
 
@@ -1103,7 +1111,8 @@ class AdminDeleteUserView(APIView):
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
-        user_data = get_cached_user_data(request.user)  # Use cached data
+        # Use the cached user data function - it will get fresh data if cache is cleared
+        user_data = get_cached_user_data(request.user)
         return Response(user_data)
 
 class GetUserProfileView(APIView):

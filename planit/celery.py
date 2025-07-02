@@ -3,9 +3,9 @@ import os
 from celery import Celery
 
 # set the default Django settings module for the 'celery' program.
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'social_media_management.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'planit.settings')
 
-app = Celery('social_media_management')
+app = Celery('planit')
 
 # Load task modules from all registered Django app configs.
 app.config_from_object('django.conf:settings', namespace='CELERY')

@@ -73,9 +73,16 @@ class CreatePostView(APIView):
     def post(self, request, client_id=None):
         data = request.data.copy()
         files = request.FILES
+        print("Raw request data:", request.data)
+        print("Content-Type:", request.content_type)
+        
+        # Debug headers
+        print("Request headers:", {k: v for k, v in request.META.items() if k.startswith('HTTP_')})
 
-        # Client Validation
-        client_id = data.get('client', client_id)
+        # Client Validation - Look for 'client_id' or 'client' in the request data
+        client_id = data.get('client_id') or data.get('client', client_id)
+        print(f"Extracted client_id: {client_id}")
+        
         if not client_id:
             return Response(
                 {"error": "Client ID is required."}, 
@@ -127,15 +134,13 @@ class CreatePostView(APIView):
         # Post Creation
         data['client'] = client.id
         data['status'] = data.get('status', 'scheduled')
-        
+                
         serializer = PostSerializer(data=data, context={'request': request})
         
         if serializer.is_valid():
             try:
-                post = serializer.save(creator=request.user)
-                scheduled_for = post.get('scheduled_for')
-                if scheduled_for:
-                    scheduled_for = timezone.datetime.strptime(scheduled_for, "%Y-%m-%dT%H:%M:%S.%fZ")
+                post = serializer.save(creator=request.user, client=client)
+                scheduled_for = post.scheduled_for  # This should now be a datetime object
 
                 # Notify the client about the post creation
                 notify_user(
@@ -150,7 +155,8 @@ class CreatePostView(APIView):
                 send_celery_email.delay(
                     'Post is created',
                     f'Hello {client.full_name or client.email}, A post has been created in your pages and scheduled for {scheduled_for}',
-                    client.email
+                    [client.email],
+                    fail_silently=False
                 )
 
                 # Cache the newly created post

@@ -23,7 +23,6 @@ class TokenAuthMiddleware(BaseMiddleware):
                 print("TOKEN:", (token != None))
                 if token:
                     access_token = AccessToken(token)
-                    print("ACCESS TOKEN PAYLOAD:", access_token.payload)
                     user_id = access_token.payload.get('user_id')
                     if user_id:
                         user = await self.get_user(user_id, User)

@@ -140,7 +140,6 @@ class CreateUserSerializer(serializers.ModelSerializer):
             send_celery_email(
                 'Account Created - Social Media Management Platform',
                 email_body,
-                "achref.maarfi0@gmail.com",
                 [email],
                 fail_silently=False,
             )
@@ -205,7 +204,6 @@ class CreateCMSerializer(serializers.ModelSerializer):
             send_celery_email(
                 'Account Created - Social Media Management Platform',
                 email_body,
-                "achref.maarfi0@gmail.com",
                 [email],
                 fail_silently=False,
             )
@@ -310,7 +308,6 @@ class PasswordResetRequestSerializer(serializers.Serializer):
         send_celery_email(
             "Password Reset Request",
             f"Click the link below to reset your password:\n\n{reset_link}",
-            "noreply@yourapp.com",
             [email],
             fail_silently=False,
         )
@@ -401,14 +398,22 @@ class RemoveCMsFromClientSerializer(serializers.Serializer):
     
 #get
 class GetUserSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+    
     class Meta:
         model=User
-        fields = ['id', 'full_name', 'first_name', 'last_name', 'email', 'is_administrator', 'is_superadministrator', 'is_moderator', 'is_community_manager', 'is_client', 'is_verified', 'phone_number']
+        fields = ['id', 'full_name', 'first_name', 'last_name', 'email','phone_number', 'user_image', 'image', 'is_administrator', 'is_superadministrator', 'is_moderator', 'is_community_manager', 'is_client', 'is_verified' ]
         
         extra_kwargs = {
             'user_image': {'required': False},
             'email':{'required': False},
         }
+    
+    def get_image(self, obj):
+        """Return the image URL if it exists"""
+        if obj.user_image:
+            return obj.user_image.url
+        return None
         
     def validate(self, data):
         """Ensure only one role is set to True."""
@@ -426,6 +431,30 @@ class GetUserSerializer(serializers.ModelSerializer):
                 if User.objects.filter(email=email).exclude(id=current_user.id).exists():
                     raise serializers.ValidationError("The email address is already in use by another user.")
 
+        # Handle user_image field - if it's a string URL that matches current image, remove it from validation
+        user_image = data.get('user_image', None)
+        if user_image and isinstance(user_image, str):
+            # If the string represents an existing image URL, don't update the image
+            if self.instance and self.instance.user_image:
+                # Extract the relative path from the full URL
+                # Frontend sends: "/media/accounts/images/image_2025-06-02_235853308.png"
+                # Database stores: "/accounts/images/image_2025-06-02_235853308.png"
+                if user_image.startswith('/media'):
+                    relative_path = user_image[7:]  # Remove '/media' prefix
+                    if relative_path == self.instance.user_image.name:
+                        data.pop('user_image', None)  # Remove from validation data
+                    else:
+                        # The URL doesn't match current image, treat as invalid
+                        data.pop('user_image', None)
+                elif user_image == self.instance.user_image.url or user_image in self.instance.user_image.url:
+                    data.pop('user_image', None)  # Remove from validation data
+                else:
+                    # String doesn't match any expected format, remove it
+                    data.pop('user_image', None)
+            else:
+                # If it's a string but user has no current image, it's invalid
+                data.pop('user_image', None)
+
         return data
 
     def update(self, instance, validated_data):
@@ -439,6 +468,14 @@ class GetUserSerializer(serializers.ModelSerializer):
         
         if full_name:
             instance.full_name = full_name
+
+        # Preserve role fields and verification status - don't allow them to be overwritten
+        role_fields = ['is_administrator', 'is_superadministrator', 'is_moderator', 
+                      'is_community_manager', 'is_client', 'is_verified']
+        
+        for role_field in role_fields:
+            if role_field in validated_data:
+                validated_data.pop(role_field)
 
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
