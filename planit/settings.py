@@ -16,6 +16,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-default-dev-key-change-in-production')
 
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8000')
+
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
@@ -75,13 +78,13 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 1048576000  # 1000 MB
 FILE_UPLOAD_MAX_MEMORY_SIZE = 1048576000  # 1000 MB
 # CSRF Settings
 CSRF_COOKIE_SAMESITE = 'Lax'  # Use 'None' if using HTTPS
-CSRF_COOKIE_SECURE = False    # Set to True in production with HTTPS
+CSRF_COOKIE_SECURE = not DEBUG    # Set to True in production with HTTPS
 CSRF_COOKIE_HTTPONLY = False  # Must be False to allow access via JavaScript
 
 # CORS Settings
 CORS_ALLOW_ALL_ORIGINS = False  # Restrict to specific origins in production
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # Add your Next.js frontend URL
+    FRONTEND_URL,
 ]
 CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be sent with requests
 
@@ -114,32 +117,31 @@ CONTENT_SECURITY_POLICY = {
     'DIRECTIVES': {
         'default-src': (
             "'self'",
-            'http://localhost:3000',
-            'http://localhost:8000',
+            FRONTEND_URL,
+            BACKEND_URL,
         ),
         'img-src': (
             "'self'",
             'data:',
-            'http://localhost:8000',
+            BACKEND_URL,
         ),
         'media-src': (
             "'self'",
             'data:',
-            'http://localhost:8000',
+            BACKEND_URL,
         ),
         'script-src': (
             "'self'",
-            'http://localhost:3000',
-            'http://localhost:8000',
+            FRONTEND_URL,
+            BACKEND_URL,
         ),
     }
 }
 
 # CSRF Trusted Origins
 CSRF_TRUSTED_ORIGINS = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:8000',
+    FRONTEND_URL,
+    BACKEND_URL,
 ]
 WILL_MIGRATE = False
 ROOT_URLCONF = 'planit.urls'
@@ -245,15 +247,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
-
-# Frontend URL for password reset
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 
 # Development flag
 DEBUG_EMAIL = DEBUG
@@ -275,18 +274,18 @@ SESSION_ENGINE =  "django.contrib.sessions.backends.db"
 SESSION_CACHE_ALIAS = "default"
 
 SESSION_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = False  # Set to True in production
+SESSION_COOKIE_SECURE = not DEBUG  # Set to True in production
 
 FACEBOOK_GRAPH_API_VERSION = 'v21.0'
 FACEBOOK_APP_ID = os.getenv("FACEBOOK_APP_ID")
 FACEBOOK_APP_SECRET = os.getenv("FACEBOOK_APP_SECRET")
-FACEBOOK_REDIRECT_URI = "http://localhost:8000/api/facebook/callback/"
+FACEBOOK_REDIRECT_URI = f"{BACKEND_URL}/api/facebook/callback/"
 FACEBOOK_SCOPES = "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement,business_management,pages_manage_metadata,pages_manage_instant_articles,email,public_profile"
 
 INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_insights,pages_show_list,business_management"
-INSTAGRAM_REDIRECT_URI = "http://localhost:8000/api/instagram/callback/"
+INSTAGRAM_REDIRECT_URI = f"{BACKEND_URL}/api/instagram/callback/"
 
-LINKEDIN_REDIRECT_URI = "http://localhost:8000/api/linkedin/callback/"
+LINKEDIN_REDIRECT_URI = f"{BACKEND_URL}/api/linkedin/callback/"
 # Updated LinkedIn scopes for Community Management API and organization management
 LINKEDIN_SCOPES = "openid,profile,email,w_member_social,rw_organization_admin,w_organization_social,r_organization_social,w_organization_social_feed,r_organization_social_feed"
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")

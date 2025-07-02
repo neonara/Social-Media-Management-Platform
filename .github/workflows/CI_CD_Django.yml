@@ -50,3 +50,32 @@ jobs:
           tags: |
             achrefmaarfi0/planit_backend_docker:latest
             achrefmaarfi0/planit_backend_docker:${{ github.sha }}
+
+  deploy:
+    # This job depends on the build-and-push job finishing successfully
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    # IMPORTANT: Only run this step on a push to the master branch, NOT on pull requests.
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            # Navigate to the directory containing your production docker-compose file
+            cd /planit
+
+            # Pull the newest images from Docker Hub that were just pushed
+            docker compose -f docker-compose.prod.yml pull
+
+            # Stop and restart all services with the new images
+            # The .env.prod file in this directory provides the environment variables
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Clean up old, unused Docker images to save space
+            docker image prune -af
