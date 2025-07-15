@@ -13,8 +13,6 @@ urlpatterns = [
     path('posts/cm/clients/', FetchCMClientPostsView.as_view(), name='fetch-cm-client-posts'),
     path('posts/<int:post_id>/to-draft/', UpdatePostToDraftView.as_view(), name='update-post-to-draft'),
     
-    
-    
     # Media
     path('media/', MediaListView.as_view(), name='media-list'),
     path('media/<int:pk>/', MediaDetailView.as_view(), name='media-detail'),
