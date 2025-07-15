@@ -65,7 +65,7 @@ def invalidate_cache(model, pk=None):
     ]
     for key in keys:
         cache.delete(key)
-  
+
 #view classes     
 class CreatePostView(APIView):
     permission_classes = [IsAuthenticated, IsModeratorOrCM]
@@ -133,7 +133,9 @@ class CreatePostView(APIView):
 
         # Post Creation
         data['client'] = client.id
-        data['status'] = data.get('status', 'scheduled')
+        # Set status to 'pending' for client approval, unless it's a draft
+        if data.get('status') != 'draft':
+            data['status'] = 'pending'
                 
         serializer = PostSerializer(data=data, context={'request': request})
         
@@ -142,22 +144,40 @@ class CreatePostView(APIView):
                 post = serializer.save(creator=request.user, client=client)
                 scheduled_for = post.scheduled_for  # This should now be a datetime object
 
-                # Notify the client about the post creation
-                notify_user(
-                    user=client,
-                    title="Post is created",
-                    message=f"A post has been created in your pages and scheduled for {scheduled_for}",
-                    type="content"
-                )
-                print(f"Notification sent to {client}")
+                # Notify the client about the post creation for review
+                if post.status == 'pending':
+                    notify_user(
+                        user=client,
+                        title="Post Pending Your Approval",
+                        message=f"A post '{post.title}' has been created and is pending your approval. Please review and approve or reject it.",
+                        type="post_pending_approval"
+                    )
+                    print(f"Approval notification sent to {client}")
 
-                # Send email asynchronously using Celery
-                send_celery_email.delay(
-                    'Post is created',
-                    f'Hello {client.full_name or client.email}, A post has been created in your pages and scheduled for {scheduled_for}',
-                    [client.email],
-                    fail_silently=False
-                )
+                    # Send email asynchronously using Celery for approval
+                    send_celery_email.delay(
+                        'Post Pending Your Approval',
+                        f'Hello {client.full_name or client.email}, A post titled "{post.title}" has been created and is pending your approval. Please log in to review and approve or reject this post. Scheduled for: {scheduled_for}',
+                        [client.email],
+                        fail_silently=False
+                    )
+                else:
+                    # Original notification for drafts or other statuses
+                    notify_user(
+                        user=client,
+                        title="Post is created",
+                        message=f"A post has been created in your pages and scheduled for {scheduled_for}",
+                        type="content"
+                    )
+                    print(f"Notification sent to {client}")
+
+                    # Send email asynchronously using Celery
+                    send_celery_email.delay(
+                        'Post is created',
+                        f'Hello {client.full_name or client.email}, A post has been created in your pages and scheduled for {scheduled_for}',
+                        [client.email],
+                        fail_silently=False
+                    )
 
                 # Cache the newly created post
                 post_data = PostSerializer(post, context={'request': request}).data
@@ -246,7 +266,7 @@ class UpdatePostToDraftView(APIView):
 
             # Serialize the updated post
             updated_data = PostSerializer(post, context={'request': request}).data
-
+            
             return Response(updated_data, status=status.HTTP_200_OK)
 
         except Post.DoesNotExist:
@@ -471,53 +491,302 @@ class SaveDraftView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class DeletePostView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsModeratorOrCM]
 
     def delete(self, request, post_id):
+        """
+        Delete a post if the user is assigned to it.
+        """
         try:
             post = Post.objects.get(id=post_id)
-            self.check_object_permissions(request, post)
-            post.delete()
-            
-            # Invalidate all related caches
-            cache.delete_many([
-                f"post_detail:{post_id}",
-                f"user_posts:{request.user.id}",
-                f"user_drafts:{request.user.id}",
-                f"cm_posts:{request.user.id}"
-            ])
-            invalidate_cache(Post)
-            
-            return Response(
-                {"message": "Post deleted successfully."},
-                status=status.HTTP_200_OK
-            )
         except Post.DoesNotExist:
             return Response(
-                {"error": "Post not found."},
+                {"error": "Post not found."}, 
                 status=status.HTTP_404_NOT_FOUND
             )
-
-    def get(self, request, client_id):
-        # Verify the client is assigned to this moderator
-        try:
-            client = User.objects.get(
-                id=client_id,
-                is_client=True,
-                assigned_moderator=request.user
-            )
-        except User.DoesNotExist:
+        
+        # Check if the user is assigned to the post
+        if not post.is_user_assigned(request.user):
             return Response(
-                {"error": "Client not found or not assigned to you"},
+                {"error": "You are not authorized to delete this post."}, 
                 status=status.HTTP_403_FORBIDDEN
             )
+        
+        # Cache invalidation
+        invalidate_cache(Post)
+        invalidate_cache(Post, post_id)
+        
+        post.delete()
+        
+        return Response(
+            {"message": "Post deleted successfully."}, 
+            status=status.HTTP_204_NO_CONTENT
+        )
 
-        # Get posts for this client
-        posts = Post.objects.filter(client=client)
-        serializer = PostSerializer(posts, many=True, context={'request': request})
-        return Response(serializer.data)
-    
 
-    
-    
-    
+class ApprovePostView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, post_id):
+        """
+        Approve a post by changing its status to 'scheduled'.
+        Clients can approve their own posts, moderators can approve any post.
+        """
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Post not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permissions - client can approve their own posts, moderators can approve any
+        if not (request.user.is_moderator or post.client == request.user):
+            return Response(
+                {"error": "You are not authorized to approve this post."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if post is in pending status
+        if post.status != 'pending':
+            return Response(
+                {"error": "Only pending posts can be approved."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get feedback from request (optional for approval)
+        feedback = request.data.get('feedback', '')
+        
+        # Update post status to scheduled
+        post.status = 'scheduled'
+        post.last_edited_by = request.user
+        if feedback:
+            post.feedback = feedback
+            post.feedback_by = request.user
+            post.feedback_at = timezone.now()
+        post.save()
+        
+        # Cache invalidation
+        invalidate_cache(Post)
+        invalidate_cache(Post, post_id)
+        
+        # Notify the creator about approval
+        if post.creator and post.creator != request.user:
+            approval_message = f"Your post '{post.title}' has been approved and scheduled."
+            if feedback:
+                approval_message += f" Feedback: {feedback}"
+            notify_user(
+                user=post.creator,
+                message=approval_message,
+                type="post_approved"
+            )
+        
+        # Notify the client about approval (if approved by moderator)
+        if post.client and post.client != request.user and request.user.is_moderator:
+            approval_message = f"The post '{post.title}' has been approved and scheduled."
+            if feedback:
+                approval_message += f" Feedback: {feedback}"
+            notify_user(
+                user=post.client,
+                message=approval_message,
+                type="post_approved"
+            )
+        
+        # Notify moderator if client approved the post
+        if request.user == post.client and post.creator and post.creator.is_moderator:
+            approval_message = f"The post '{post.title}' has been approved by the client and is now scheduled."
+            if feedback:
+                approval_message += f" Client feedback: {feedback}"
+            notify_user(
+                user=post.creator,
+                message=approval_message,
+                type="post_approved"
+            )
+        
+        response_data = {
+            "message": "Post approved successfully.",
+            "post": PostSerializer(post).data
+        }
+        if feedback:
+            response_data["feedback"] = feedback
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+class RejectPostView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, post_id):
+        """
+        Reject a post by changing its status to 'rejected'.
+        Clients can reject their own posts, moderators can reject any post.
+        """
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Post not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permissions - client can reject their own posts, moderators can reject any
+        if not (request.user.is_moderator or post.client == request.user):
+            return Response(
+                {"error": "You are not authorized to reject this post."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if post is in pending status
+        if post.status != 'pending':
+            return Response(
+                {"error": "Only pending posts can be rejected."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get feedback from request
+        feedback = request.data.get('feedback', 'No feedback provided')
+        
+        # Update post status to rejected
+        post.status = 'rejected'
+        post.last_edited_by = request.user
+        post.feedback = feedback
+        post.feedback_by = request.user
+        post.feedback_at = timezone.now()
+        post.save()
+        
+        # Cache invalidation
+        invalidate_cache(Post)
+        invalidate_cache(Post, post_id)
+        
+        # Notify the creator about rejection
+        if post.creator and post.creator != request.user:
+            notify_user(
+                title=f"Post '{post.title}' Rejected",
+                user=post.creator,
+                message=f"Your post '{post.title}' has been rejected. Feedback: {feedback}",
+                type="post_rejected"
+            )
+        
+        # Notify the client about rejection (if rejected by moderator)
+        if post.client and post.client != request.user and request.user.is_moderator:
+            notify_user(
+                title=f"Post '{post.title}' Rejected",
+                user=post.client,
+                message=f"The post '{post.title}' has been rejected. Feedback: {feedback}",
+                type="post_rejected"
+            )
+        
+        # Notify moderator if client rejected the post
+        if request.user == post.client and post.creator and post.creator.is_moderator:
+            notify_user(
+                title=f"Post '{post.title}' Rejected",
+                user=post.creator,
+                message=f"The post '{post.title}' has been rejected by the client. Feedback: {feedback}",
+                type="post_rejected"
+            )
+        
+        return Response(
+            {
+                "message": "Post rejected successfully.",
+                "post": PostSerializer(post).data,
+                "feedback": feedback
+            }, 
+            status=status.HTTP_200_OK
+        )
+
+class FetchPendingPostsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """
+        Fetch pending posts for the authenticated user.
+        - Clients see their own pending posts
+        - Moderators see all pending posts
+        - CMs see pending posts for their assigned clients
+        """
+        cache_key = f"pending_posts:{request.user.id}"
+        cached_data = cache.get(cache_key)
+
+        if cached_data is None:
+            if request.user.is_client:
+                # Clients see their own pending posts
+                pending_posts = Post.objects.filter(
+                    client=request.user,
+                    status='pending'
+                ).select_related('creator', 'client').prefetch_related('media')
+            
+            elif request.user.is_moderator:
+                # Moderators see all pending posts
+                pending_posts = Post.objects.filter(
+                    status='pending'
+                ).select_related('creator', 'client').prefetch_related('media')
+            
+            elif request.user.is_community_manager:
+                # CMs see pending posts for their assigned clients
+                assigned_clients = User.objects.filter(
+                    is_client=True,
+                    assigned_communitymanagerstoclient=request.user
+                )
+                pending_posts = Post.objects.filter(
+                    client__in=assigned_clients,
+                    status='pending'
+                ).select_related('creator', 'client').prefetch_related('media')
+            
+            else:
+                pending_posts = Post.objects.none()
+
+            # Serialize the pending posts
+            serializer = PostSerializer(pending_posts, many=True, context={'request': request})
+            cached_data = serializer.data
+
+            # Cache the serialized data for 5 minutes
+            cache.set(cache_key, cached_data, timeout=60 * 5)
+
+        return Response(cached_data, status=status.HTTP_200_OK)
+
+class PostFeedbackView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, post_id):
+        """
+        Get feedback for a specific post.
+        Only accessible to users who have access to the post.
+        """
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Post not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check if user has access to this post
+        if not (post.client == request.user or 
+                post.creator == request.user or 
+                request.user.is_moderator or
+                (request.user.is_community_manager and 
+                 post.client and post.client.assigned_communitymanagerstoclient.filter(id=request.user.id).exists())):
+            return Response(
+                {"error": "You are not authorized to view feedback for this post."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        feedback_data = {
+            "post_id": post.id,
+            "post_title": post.title,
+            "current_status": post.status,
+            "has_feedback": post.has_feedback(),
+            "feedback": post.feedback,
+            "feedback_by": {
+                "id": post.feedback_by.id,
+                "name": post.feedback_by.full_name or post.feedback_by.email,
+                "email": post.feedback_by.email
+            } if post.feedback_by else None,
+            "feedback_at": post.feedback_at
+        }
+        
+        return Response(feedback_data, status=status.HTTP_200_OK)
+
+
+
+
