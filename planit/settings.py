@@ -25,7 +25,7 @@ DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 # settings.py
-REDIS_HOST = os.environ.get('REDIS_HOST', 'redis')
+REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
 REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
 
 CACHES = {
@@ -70,6 +70,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'apps.accounts.authentication.SecurityMiddleware',  # Custom security middleware
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     #'apps.core.middleware.MediaResponseHeadersMiddleware',
@@ -181,8 +182,9 @@ DATABASES = {
 REST_FRAMEWORK = {
     'NON_FIELD_ERRORS_KEY': 'error',
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        # 'rest_framework.authentication.SessionAuthentication',
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'apps.accounts.authentication.JWTCookieAuthentication',  # Cookie-based JWT auth (primary)
+        'apps.accounts.authentication.JWTHeaderAuthentication',  # Header-based JWT auth (secondary)
+        # 'rest_framework.authentication.SessionAuthentication',  # Disabled for security
     ),
 }
 
@@ -192,6 +194,22 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
+    'ALGORITHM': 'HS256',  # Ensure strong algorithm
+    'SIGNING_KEY': SECRET_KEY,  # Use secret key for signing
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    'JSON_ENCODER': None,
+    'JTI_CLAIM': 'jti',
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(minutes=90),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=1),
+    'TOKEN_OBTAIN_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenObtainPairSerializer',
+    'TOKEN_REFRESH_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenRefreshSerializer',
+    'TOKEN_VERIFY_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenVerifySerializer',
+    'TOKEN_BLACKLIST_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenBlacklistSerializer',
+    'SLIDING_TOKEN_OBTAIN_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenObtainSlidingSerializer',
+    'SLIDING_TOKEN_REFRESH_SERIALIZER': 'rest_framework_simplejwt.serializers.TokenRefreshSlidingSerializer',
 }
 
 SESSION_COOKIE_AGE = 3600  # Regular session (1 hour in seconds)
@@ -245,10 +263,14 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Email Configuration
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
+# Use console backend for development (when DEBUG=True), SMTP for production
+if DEBUG:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
@@ -316,3 +338,75 @@ CELERY_BEAT_SCHEDULE = {
         'options': {'expires': 59}  # Expire task if not executed within 59 seconds
     },
 }
+
+# Security Logging Configuration
+import os
+
+# Ensure logs directory exists with proper permissions
+LOG_DIR = os.path.join(BASE_DIR, 'logs')
+try:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    # Create the security log file if it doesn't exist
+    security_log_file = os.path.join(LOG_DIR, 'security.log')
+    if not os.path.exists(security_log_file):
+        open(security_log_file, 'a').close()
+        os.chmod(security_log_file, 0o666)  # Make it writable
+except (OSError, PermissionError):
+    # If we can't create the log directory, use console logging only
+    LOG_DIR = None
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'loggers': {
+        'security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+    },
+}
+
+# Add file handler only if we can write to the logs directory
+if LOG_DIR and os.access(LOG_DIR, os.W_OK):
+    LOGGING['handlers']['security_file'] = {
+        'level': 'WARNING',
+        'class': 'logging.FileHandler',
+        'filename': os.path.join(LOG_DIR, 'security.log'),
+        'formatter': 'verbose',
+    }
+    LOGGING['loggers']['security']['handlers'].append('security_file')
+    LOGGING['loggers']['django.security']['handlers'].append('security_file')
+
+# Additional Security Settings
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+
+# JWT Cookie Security Settings
+JWT_COOKIE_SECURE = not DEBUG  # Use secure cookies in production
+JWT_COOKIE_HTTPONLY = True
+JWT_COOKIE_SAMESITE = 'Lax'
+JWT_COOKIE_MAX_AGE = 90 * 60  # 90 minutes (match ACCESS_TOKEN_LIFETIME)

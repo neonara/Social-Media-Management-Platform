@@ -425,20 +425,31 @@ class UserLoginView(APIView):
             cookie_max_age = 30 * 24 * 60 * 60 if remember_me else None  # 30 days or session cookie
             
             response = Response(serializer.validated_data, status=status.HTTP_200_OK)
+            
+            # Set secure cookies with enhanced security
             response.set_cookie(
                 "access_token",
                 serializer.validated_data["access_token"],
                 httponly=True,
-                samesite="Lax",
+                secure=getattr(settings, 'JWT_COOKIE_SECURE', not settings.DEBUG),
+                samesite=getattr(settings, 'JWT_COOKIE_SAMESITE', 'Lax'),
                 max_age=cookie_max_age
             )
             response.set_cookie(
                 "refresh_token",
                 serializer.validated_data["refresh_token"],
                 httponly=True,
-                samesite="Lax",
+                secure=getattr(settings, 'JWT_COOKIE_SECURE', not settings.DEBUG),
+                samesite=getattr(settings, 'JWT_COOKIE_SAMESITE', 'Lax'),
                 max_age=cookie_max_age
             )
+            
+            # Log successful authentication
+            import logging
+            logger = logging.getLogger('security')
+            logger.info(f'Successful login for user: {serializer.validated_data.get("email")} '
+                       f'from IP: {request.META.get("REMOTE_ADDR")}')
+            
             return response  # Return the success response here
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
@@ -490,6 +501,12 @@ class LogoutUserView(APIView):
         response = Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
         response.delete_cookie("access_token")  # Delete cookies
         response.delete_cookie("refresh_token")
+        
+        # Log successful logout
+        import logging
+        logger = logging.getLogger('security')
+        logger.info(f'Successful logout for user ID: {user_id} from IP: {request.META.get("REMOTE_ADDR")}')
+        
         return response
 #password
 class FirstTimePasswordChangeView(APIView):
@@ -1182,3 +1199,124 @@ class GetUserStatsView(APIView):
         
         return Response(stats)
 
+class ValidateTokenView(APIView):
+    """
+    Enhanced JWT token validation endpoint that validates token integrity
+    and returns user information. This prevents frontend token manipulation.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        try:
+            user = request.user
+            
+            # Additional security checks
+            if not user.is_active:
+                return Response(
+                    {"error": "User account is disabled"}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            if not user.is_verified:
+                return Response(
+                    {"error": "User email is not verified"}, 
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+            
+            # Log security event
+            import logging
+            logger = logging.getLogger('security')
+            logger.info(f'Token validation successful for user: {user.email} '
+                       f'from IP: {request.META.get("REMOTE_ADDR")}')
+            
+            # Return user data with roles
+            return Response({
+                "valid": True,
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "is_active": user.is_active,
+                    "is_verified": user.is_verified,
+                    "roles": {
+                        "is_administrator": user.is_administrator,
+                        "is_superadministrator": user.is_superadministrator,
+                        "is_moderator": user.is_moderator,
+                        "is_community_manager": user.is_community_manager,
+                        "is_client": user.is_client,
+                    }
+                }
+            })
+            
+        except Exception as e:
+            # Log security incident
+            import logging
+            logger = logging.getLogger('security')
+            logger.warning(f'Token validation failed from IP: {request.META.get("REMOTE_ADDR")} '
+                          f'Error: {str(e)}')
+            
+            return Response(
+                {"error": "Token validation failed"}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+
+
+class ValidateRoleView(APIView):
+    """
+    Role validation endpoint that checks if user has required roles.
+    This prevents role manipulation through cookie tampering.
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        try:
+            user = request.user
+            required_roles = request.data.get('required_roles', [])
+            
+            if not isinstance(required_roles, list):
+                return Response(
+                    {"error": "required_roles must be a list"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Map user's actual roles from database
+            user_roles = []
+            if user.is_superadministrator:
+                user_roles.append('super_administrator')
+            if user.is_administrator:
+                user_roles.append('administrator')
+            if user.is_moderator:
+                user_roles.append('moderator')
+            if user.is_community_manager:
+                user_roles.append('community_manager')
+            if user.is_client:
+                user_roles.append('client')
+            
+            # Check if user has any of the required roles
+            has_access = any(role in user_roles for role in required_roles)
+            
+            # Log role check for security monitoring
+            import logging
+            logger = logging.getLogger('security')
+            logger.info(f'Role validation for user: {user.email} '
+                       f'Required: {required_roles} '
+                       f'User has: {user_roles} '
+                       f'Access granted: {has_access} '
+                       f'from IP: {request.META.get("REMOTE_ADDR")}')
+            
+            return Response({
+                "has_access": has_access,
+                "user_roles": user_roles,
+                "required_roles": required_roles
+            })
+            
+        except Exception as e:
+            # Log security incident
+            import logging
+            logger = logging.getLogger('security')
+            logger.warning(f'Role validation failed from IP: {request.META.get("REMOTE_ADDR")} '
+                          f'Error: {str(e)}')
+            
+            return Response(
+                {"error": "Role validation failed"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
