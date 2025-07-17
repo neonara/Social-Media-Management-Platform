@@ -5,7 +5,7 @@ from django.conf.urls.static import static
 from django.conf import settings
 
 def home(request):
-    return HttpResponse("Welcome to the Social Media Management Platform!")
+    return HttpResponse("Welcome to Plan'it !")
 
 urlpatterns = [
     path('', home, name='home'),  

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import ClientFetchModeratorAndCMsView, AssignedModeratorsAndClientsView, AssignedClientsView, AssignCommunityManagerToModeratorView ,CurrentUserView,FetchEmails, AssignModeratorToClientView, RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView, ClientAssignedCommunityManagersView, EligibleCMsForClient, RemoveClientCommunityManagersView, AssignedModeratorClientsView, AssignCMToClientView, CreateCMView, AssignedModeratorCommunityManagersView  
+from .views import ValidateTokenView, ValidateRoleView, ClientFetchModeratorAndCMsView, AssignedModeratorsAndClientsView, AssignedClientsView, AssignCommunityManagerToModeratorView ,CurrentUserView,FetchEmails, AssignModeratorToClientView, RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView, ClientAssignedCommunityManagersView, EligibleCMsForClient, RemoveClientCommunityManagersView, AssignedModeratorClientsView, AssignCMToClientView, CreateCMView, AssignedModeratorCommunityManagersView  
 
 urlpatterns = [
     # Authentication URLs
@@ -9,6 +9,11 @@ urlpatterns = [
     path('auth/register/', CreateUserView.as_view(), name='create-user'),
     path('auth/reset-password/', PasswordResetRequestView.as_view(), name='reset_password'),
     path('auth/first-time-password-change/', FirstTimePasswordChangeView.as_view(), name='first-time-password-change'),
+    
+    # Security validation endpoints
+    path('auth/validate-token/', ValidateTokenView.as_view(), name='validate-token'),
+    path('auth/validate-role/', ValidateRoleView.as_view(), name='validate-role'),
+    
     path('reset-password-confirm/<uid>/<token>/', PasswordResetConfirmView.as_view(), name='reset-password-confirm'),
     
     # User management URLs

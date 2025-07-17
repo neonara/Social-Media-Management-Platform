@@ -63,6 +63,24 @@ class Post(models.Model):
         related_name='posts',
         help_text="The exact Page or Account where this post is scheduled"
     )
+    feedback = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Feedback provided when approving or rejecting the post"
+    )
+    feedback_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='feedback_posts',
+        help_text="The user who provided the feedback"
+    )
+    feedback_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the feedback was provided"
+    )
 
     def __str__(self):
         return f"{self.title} by {self.creator.email}"
@@ -87,3 +105,9 @@ class Post(models.Model):
         if user == self.creator.assigned_moderator:
             return True
         return False
+    
+    def has_feedback(self):
+        """
+        Check if the post has feedback.
+        """
+        return bool(self.feedback and self.feedback.strip())

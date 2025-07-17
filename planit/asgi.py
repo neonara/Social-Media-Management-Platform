@@ -13,6 +13,7 @@ from planit.websocket_auth import TokenAuthMiddlewareStack
 # Import routing configurations from all apps
 import apps.notifications.routing
 import apps.collaboration.routing
+import apps.content.routing
 from apps.accounts.routing import websocket_urlpatterns as accounts_websocket_urlpatterns
 
 
@@ -20,6 +21,7 @@ from apps.accounts.routing import websocket_urlpatterns as accounts_websocket_ur
 all_websocket_urlpatterns = (
     apps.notifications.routing.websocket_urlpatterns +
     apps.collaboration.routing.websocket_urlpatterns +
+    apps.content.routing.websocket_urlpatterns +
     accounts_websocket_urlpatterns
 )
 print("ASGI setup - loading application")

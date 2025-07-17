@@ -55,13 +55,16 @@ class PostSerializer(serializers.ModelSerializer):
         default=list
     )
     last_edited_by = serializers.StringRelatedField(read_only=True)
+    feedback_by = UserSerializer(read_only=True)
+    
     class Meta:
         model = Post
         fields = [
             'id', 'title', 'description', 'scheduled_for', 'status',
-            'creator', 'media', 'media_files', 'platforms', 'hashtags', 'client','last_edited_by'
+            'creator', 'media', 'media_files', 'platforms', 'hashtags', 'client',
+            'last_edited_by', 'feedback', 'feedback_by', 'feedback_at'
         ]
-        read_only_fields = ['id', 'creator','client', 'media','last_edited_by']
+        read_only_fields = ['id', 'creator','client', 'media','last_edited_by', 'feedback_by', 'feedback_at']
 
     def create(self, validated_data):
         media_files = validated_data.pop('media_files', [])
