@@ -16,6 +16,7 @@ def send_post_websocket_update(action, post_data=None, post_id=None, old_status=
     Send WebSocket update to all clients in the post_table_updates group
     """
     if not channel_layer:
+        print("Error: Channel layer not available")
         return
     
     message = {
@@ -26,11 +27,13 @@ def send_post_websocket_update(action, post_data=None, post_id=None, old_status=
     }
     
     if post_data:
-        message['post_data'] = post_data
+        message['data'] = post_data
     
     if old_status and new_status:
         message['old_status'] = old_status
         message['new_status'] = new_status
+    
+    print(f"Sending WebSocket message: {message}")
     
     # Send message to the WebSocket group
     async_to_sync(channel_layer.group_send)(

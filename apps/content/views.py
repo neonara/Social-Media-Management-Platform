@@ -216,15 +216,36 @@ class CreatePostView(APIView):
     
 class GetPostCreatorsView(APIView):
     """
-    View to fetch all unique creators of posts.
+    View to fetch all unique creators of posts that the user can see.
     """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Fetch all posts
-        posts = Post.objects.all()
+        # Build the query based on user role - same logic as ListPostsView
+        if request.user.is_client:
+            # Clients see only their own posts
+            posts = Post.objects.filter(client=request.user)
+            
+        elif request.user.is_community_manager:
+            # CMs see posts they created + posts for clients they're assigned to
+            posts = Post.objects.filter(
+                models.Q(creator=request.user) |  # Posts they created
+                models.Q(client__assigned_communitymanagerstoclient=request.user)  # Posts for their assigned clients
+            ).distinct()
+            
+        elif request.user.is_moderator:
+            # Moderators see posts from their assigned CMs + posts for their assigned clients
+            posts = Post.objects.filter(
+                models.Q(creator__in=request.user.assigned_communitymanagers.all()) |  # Posts from their assigned CMs
+                models.Q(client__assigned_moderator=request.user) |  # Posts for their assigned clients
+                models.Q(creator=request.user)  # Posts they created themselves (if any)
+            ).distinct()
+            
+        else:
+            # Super admin or admin sees all posts
+            posts = Post.objects.all()
 
-        # Get the creators of these posts
+        # Get the creators of these visible posts
         creators = User.objects.filter(
             id__in=posts.values_list('creator_id', flat=True)
         ).distinct()
@@ -288,13 +309,33 @@ class ListPostsView(APIView):
         cached_data = cache.get(cache_key)
 
         if cached_data is None:
+            # Build the query based on user role
+            if request.user.is_client:
+                # Clients see only their own posts
+                posts = Post.objects.filter(client=request.user)
+                
+            elif request.user.is_community_manager:
+                # CMs see posts they created + posts for clients they're assigned to
+                posts = Post.objects.filter(
+                    models.Q(creator=request.user) |  # Posts they created
+                    models.Q(client__assigned_communitymanagerstoclient=request.user)  # Posts for their assigned clients
+                ).distinct()
+                
+            elif request.user.is_moderator:
+                # Moderators see posts from their assigned CMs + posts for their assigned clients
+                posts = Post.objects.filter(
+                    models.Q(creator__in=request.user.assigned_communitymanagers.all()) |  # Posts from their assigned CMs
+                    models.Q(client__assigned_moderator=request.user) |  # Posts for their assigned clients
+                    models.Q(creator=request.user)  # Posts they created themselves (if any)
+                ).distinct()
+                
+                
+            else:
+                # Super admin or admin sees all posts
+                posts = Post.objects.all()
+
             # Fetch posts with related client and creator objects
-            posts = Post.objects.filter(
-                models.Q(creator=request.user) |
-                models.Q(client=request.user) |
-                models.Q(creator__assigned_moderator=request.user) |
-                models.Q(creator__assigned_communitymanagers=request.user)
-            ).distinct().select_related('client', 'creator').prefetch_related('media')
+            posts = posts.select_related('client', 'creator').prefetch_related('media')
 
             # Serialize the posts with context
             serializer = PostSerializer(posts, many=True, context={'request': request})
@@ -309,7 +350,7 @@ class UpdatePostView(APIView):
     
     def get(self, request, post_id):  
         try:
-            post = Post.objects.get(id=post_id)
+            post = Post.objects.select_related('client', 'creator', 'feedback_by').prefetch_related('media').get(id=post_id)
             self.check_object_permissions(request, post)
             serializer = PostSerializer(post, context={'request': request})
             return Response(serializer.data)
@@ -788,5 +829,240 @@ class PostFeedbackView(APIView):
         return Response(feedback_data, status=status.HTTP_200_OK)
 
 
+class GetPostByIdView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, post_id):
+        """
+        Retrieve a single post by its ID.
+        """
+        try:
+            post = Post.objects.select_related('client', 'creator', 'feedback_by').prefetch_related('media').get(id=post_id)
+            
+            # Check if user has permission to view this post
+            # Allow access if:
+            # 1. User is assigned to the post (covers client, assigned CM, assigned moderator)
+            # 2. User is a moderator or administrator
+            # 3. User is the creator (community manager who created the post)
+            # 4. User is a CM assigned to the client of this post
+            cm_assigned_to_client = (
+                request.user.is_community_manager and 
+                post.client and 
+                post.client.assigned_communitymanagerstoclient.filter(id=request.user.id).exists()
+            )
+            
+            if not (post.is_user_assigned(request.user) or 
+                    request.user.is_moderator or 
+                    request.user.is_administrator or
+                    post.creator == request.user or
+                    cm_assigned_to_client):
+                return Response(
+                    {"error": "You don't have permission to view this post"}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            serializer = PostSerializer(post, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Post not found"}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"An error occurred: {str(e)}"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
+class PublishPostView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, post_id):
+        """
+        Publish a post by changing its status to 'published'.
+        Only moderators and authorized users can publish posts.
+        """
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Post not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permissions - moderators can publish any post, clients can publish their own
+        if not (request.user.is_moderator or post.client == request.user):
+            return Response(
+                {"error": "You are not authorized to publish this post."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if post is in scheduled status
+        if post.status != 'scheduled':
+            return Response(
+                {"error": "Only scheduled posts can be published."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update post status to published
+        post.status = 'published'
+        post.last_edited_by = request.user
+        post.save()
+        
+        # Cache invalidation
+        invalidate_cache(Post)
+        invalidate_cache(Post, post_id)
+        
+        # Notify the creator about publication
+        if post.creator and post.creator != request.user:
+            notify_user(
+                user=post.creator,
+                message=f"Your post '{post.title}' has been published successfully!",
+                type="post_published"
+            )
+        
+        # Notify the client about publication (if published by moderator)
+        if post.client and post.client != request.user and request.user.is_moderator:
+            notify_user(
+                user=post.client,
+                message=f"The post '{post.title}' has been published successfully!",
+                type="post_published"
+            )
+        
+        response_data = {
+            "message": "Post published successfully.",
+            "post": PostSerializer(post).data
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+class ResubmitPostView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, post_id):
+        """
+        Resubmit a rejected post by changing its status to 'pending'.
+        Only the creator or client can resubmit rejected posts.
+        """
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Post not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permissions - creator or client can resubmit
+        if not (post.creator == request.user or post.client == request.user):
+            return Response(
+                {"error": "You are not authorized to resubmit this post."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if post is in rejected status
+        if post.status != 'rejected':
+            return Response(
+                {"error": "Only rejected posts can be resubmitted."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update post status to pending
+        post.status = 'pending'
+        post.last_edited_by = request.user
+        # Clear previous feedback when resubmitting
+        post.feedback = None
+        post.feedback_by = None
+        post.feedback_at = None
+        post.save()
+        
+        # Cache invalidation
+        invalidate_cache(Post)
+        invalidate_cache(Post, post_id)
+        
+        # Notify moderators about resubmission
+        if post.client and post.client.assigned_moderator:
+            notify_user(
+                user=post.client.assigned_moderator,
+                message=f"The post '{post.title}' has been resubmitted for review.",
+                type="post_resubmitted"
+            )
+        
+        response_data = {
+            "message": "Post resubmitted successfully.",
+            "post": PostSerializer(post).data
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+
+
+class CancelApprovalView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, post_id):
+        """
+        Cancel approval of a scheduled post by changing its status to 'rejected'.
+        Only moderators can cancel approval.
+        """
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Post not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permissions - only moderators can cancel approval
+        if not request.user.is_moderator:
+            return Response(
+                {"error": "You are not authorized to cancel approval for this post."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if post is in scheduled status
+        if post.status != 'scheduled':
+            return Response(
+                {"error": "Only scheduled posts can have their approval cancelled."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get feedback from request
+        feedback = request.data.get('feedback', 'Approval cancelled')
+        
+        # Update post status to rejected
+        post.status = 'rejected'
+        post.last_edited_by = request.user
+        post.feedback = feedback
+        post.feedback_by = request.user
+        post.feedback_at = timezone.now()
+        post.save()
+        
+        # Cache invalidation
+        invalidate_cache(Post)
+        invalidate_cache(Post, post_id)
+        
+        # Notify the creator about cancellation
+        if post.creator and post.creator != request.user:
+            notify_user(
+                user=post.creator,
+                message=f"The approval for post '{post.title}' has been cancelled. Feedback: {feedback}",
+                type="post_approval_cancelled"
+            )
+        
+        # Notify the client about cancellation
+        if post.client and post.client != request.user:
+            notify_user(
+                user=post.client,
+                message=f"The approval for post '{post.title}' has been cancelled. Feedback: {feedback}",
+                type="post_approval_cancelled"
+            )
+        
+        response_data = {
+            "message": "Post approval cancelled successfully.",
+            "post": PostSerializer(post).data,
+            "feedback": feedback
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
 

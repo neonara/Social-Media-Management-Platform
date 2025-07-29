@@ -272,15 +272,24 @@ class AssignedModeratorCommunityManagersView(APIView):
 
         cm_data = []
         for cm in assigned_cms:
+            # Get all assigned clients for this CM
+            assigned_clients = cm.assigned_communitymanagerstoclient.all()
+            
             cm_data.append({
                 "id": cm.id,
                 "full_name": cm.full_name,
                 "email": cm.email,
                 "user_image": cm.user_image.url if cm.user_image else None,
-                "assigned_communitymanagerstoclient": [
-                    {"id": client.id, "full_name": client.full_name, "email": client.email, "user_image": client.user_image.url if client.user_image else None}
-                    for client in cm.assigned_communitymanagerstoclient.all()
-                ]
+                "phone_number": cm.phone_number,
+                "assigned_clients": [
+                    {
+                        "id": client.id,
+                        "full_name": client.full_name,
+                        "email": client.email,
+                        "user_image": client.user_image.url if client.user_image else None
+                    }
+                    for client in assigned_clients
+                ] if assigned_clients.exists() else []
             })
 
         return Response(cm_data, status=status.HTTP_200_OK)
@@ -681,6 +690,14 @@ class AssignCMToClientView(APIView):
         if not client.assigned_moderator:
             return Response({"error": "This client has no assigned moderator. Assign a moderator first."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Additional permission check: moderators can only manage their assigned clients, admins can manage any client
+        if request.user.is_moderator and client.assigned_moderator != request.user:
+            return Response(
+                {"error": "You can only assign community managers to clients assigned to you."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        # Admins and superadmins can manage any client, so no additional check needed for them
+
         serializer = AssignCMToClientSerializer(data=request.data)
         if serializer.is_valid():
             cm_id = serializer.validated_data["cm_id"]
@@ -808,12 +825,21 @@ class RemoveModeratorFromClientView(APIView):
 
 class RemoveClientCommunityManagersView(generics.UpdateAPIView):
     serializer_class = RemoveCMsFromClientSerializer
-    permission_classes = [IsAdminOrSuperAdmin]
+    permission_classes = [IsModeratorOrAdmin]  # Allow both moderators and admins to manage client relationships
     lookup_url_kwarg = 'client_id'
     queryset = User.objects.filter(is_client=True)
 
     def update(self, request, *args, **kwargs):
         client = self.get_object()  # Get the client object
+        
+        # Additional permission check: moderators can only manage their assigned clients, admins can manage any client
+        if request.user.is_moderator and client.assigned_moderator != request.user:
+            return Response(
+                {"error": "You can only manage community managers for clients assigned to you."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        # Admins and superadmins can manage any client, so no additional check needed for them
+        
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         cm_ids_to_remove = serializer.validated_data['community_manager_ids']
