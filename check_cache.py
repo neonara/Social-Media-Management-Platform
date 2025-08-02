@@ -17,11 +17,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'planit.settings')
 django.setup()
 
 from django.core.cache import cache
-from django.contrib.auth import get_user_model
+from apps.accounts.models import User
 from apps.accounts.services import get_cached_user_data, clear_user_cache
 import json
-
-User = get_user_model()
 
 def check_django_cache(user_id=None):
     """Check Django cache for user data"""

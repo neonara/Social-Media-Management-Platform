@@ -1,10 +1,6 @@
 from rest_framework import serializers
 from .models import Post, Media
-from rest_framework import serializers
-from django.contrib.auth import get_user_model
-
-
-User = get_user_model()
+from apps.accounts.models import User
 
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for User objects."""
@@ -60,11 +56,17 @@ class PostSerializer(serializers.ModelSerializer):
     class Meta:
         model = Post
         fields = [
-            'id', 'title', 'description', 'scheduled_for', 'status',
+            'id', 'title', 'description', 'scheduled_for', 'status', 'created_at', 'updated_at',
             'creator', 'media', 'media_files', 'platforms', 'hashtags', 'client',
-            'last_edited_by', 'feedback', 'feedback_by', 'feedback_at'
+            'last_edited_by', 'feedback', 'feedback_by', 'feedback_at',
+            'client_approved_at', 'client_rejected_at', 'moderator_validated_at', 
+            'moderator_rejected_at', 'published_at', 'is_client_approved', 'is_moderator_rejected'
         ]
-        read_only_fields = ['id', 'creator','client', 'media','last_edited_by', 'feedback_by', 'feedback_at']
+        read_only_fields = [
+            'id', 'creator','client', 'media','last_edited_by', 'feedback_by', 'feedback_at',
+            'client_approved_at', 'client_rejected_at', 'moderator_validated_at', 
+            'moderator_rejected_at', 'published_at', 'is_client_approved', 'is_moderator_rejected'
+        ]
 
     def create(self, validated_data):
         media_files = validated_data.pop('media_files', [])

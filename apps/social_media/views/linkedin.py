@@ -1,6 +1,5 @@
 import requests
 import logging
-import urllib.request
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -42,8 +41,7 @@ class LinkedInConnectView(APIView):
                     user_id = token_data['user_id']
                     
                     # Get the user from the database
-                    from django.contrib.auth import get_user_model
-                    User = get_user_model()
+                    from apps.accounts.models import User
                     user = User.objects.get(id=user_id)
                     
                     # Set the user on the request
@@ -167,8 +165,7 @@ class LinkedInCallbackView(APIView):
                         state = state_parts[0]
                         update_profile = state_parts[1]
                     
-                    from django.contrib.auth import get_user_model
-                    User = get_user_model()
+                    from apps.accounts.models import User
                     user = User.objects.get(id=state)
                     
                     # Store update_profile in request.GET for later use

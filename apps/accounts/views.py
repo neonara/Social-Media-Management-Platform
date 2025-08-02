@@ -1,3 +1,4 @@
+import logging
 from apps.accounts.tasks import send_celery_email
 from apps.accounts.models import User
 from planit import settings
@@ -7,23 +8,16 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated, AllowAny, IsAdminUser, BasePermission
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.settings import api_settings
 from rest_framework.generics import UpdateAPIView
 from rest_framework import generics, status
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
-from django.views.decorators.cache import cache_page
-from django.utils.decorators import method_decorator
-from datetime import timedelta
+from django.core.cache import cache
 
 from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, GetUserSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer, RemoveCMsFromClientSerializer, AssignCMToClientSerializer, CreateCMSerializer
 
 from .services import get_cached_user_data  # Import the caching service
-from django.core.cache import cache
-from apps.notifications.services import notify_user  # Import the notification service
-
-from django.contrib.auth import get_user_model
-User = get_user_model() 
+from apps.notifications.services import notify_user  # Import the notification service 
 
 #permissions
 class IsAdministrator(BasePermission):
@@ -45,7 +39,6 @@ class IsModeratorOrAdmin(BasePermission):
     """Allows access only to moderators or administrators."""
     def has_permission(self, request, view):
         return request.user.is_authenticated and (request.user.is_moderator or request.user.is_administrator or request.user.is_superadministrator )
-
 
 #view
 
@@ -454,7 +447,6 @@ class UserLoginView(APIView):
             )
             
             # Log successful authentication
-            import logging
             logger = logging.getLogger('security')
             logger.info(f'Successful login for user: {serializer.validated_data.get("email")} '
                        f'from IP: {request.META.get("REMOTE_ADDR")}')
@@ -512,7 +504,6 @@ class LogoutUserView(APIView):
         response.delete_cookie("refresh_token")
         
         # Log successful logout
-        import logging
         logger = logging.getLogger('security')
         logger.info(f'Successful logout for user ID: {user_id} from IP: {request.META.get("REMOTE_ADDR")}')
         
@@ -1250,7 +1241,6 @@ class ValidateTokenView(APIView):
                 )
             
             # Log security event
-            import logging
             logger = logging.getLogger('security')
             logger.info(f'Token validation successful for user: {user.email} '
                        f'from IP: {request.META.get("REMOTE_ADDR")}')
@@ -1275,7 +1265,6 @@ class ValidateTokenView(APIView):
             
         except Exception as e:
             # Log security incident
-            import logging
             logger = logging.getLogger('security')
             logger.warning(f'Token validation failed from IP: {request.META.get("REMOTE_ADDR")} '
                           f'Error: {str(e)}')
@@ -1321,7 +1310,6 @@ class ValidateRoleView(APIView):
             has_access = any(role in user_roles for role in required_roles)
             
             # Log role check for security monitoring
-            import logging
             logger = logging.getLogger('security')
             logger.info(f'Role validation for user: {user.email} '
                        f'Required: {required_roles} '
@@ -1337,7 +1325,6 @@ class ValidateRoleView(APIView):
             
         except Exception as e:
             # Log security incident
-            import logging
             logger = logging.getLogger('security')
             logger.warning(f'Role validation failed from IP: {request.META.get("REMOTE_ADDR")} '
                           f'Error: {str(e)}')

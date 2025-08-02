@@ -1,10 +1,8 @@
 from django.core.management.base import BaseCommand
 from django.core.cache import cache
-from django.contrib.auth import get_user_model
+from apps.accounts.models import User
 from apps.accounts.services import get_cached_user_data, clear_user_cache
 import json
-
-User = get_user_model()
 
 class Command(BaseCommand):
     help = 'Check and manage user cache data'

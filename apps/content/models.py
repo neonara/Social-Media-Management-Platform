@@ -10,7 +10,6 @@ class Media(models.Model):
         ('document', 'Document'),
     ]
     
-
     file = models.FileField(upload_to='media/')
     name = models.CharField(max_length=255, blank=True)
     type = models.CharField(max_length=10, choices=FILE_TYPE_CHOICES, default='image')
@@ -81,6 +80,39 @@ class Post(models.Model):
         blank=True,
         help_text="When the feedback was provided"
     )
+    client_approved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the client approved this post"
+    )
+    client_rejected_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the client rejected this post"
+    )
+    moderator_validated_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the moderator validated this post"
+    )
+    moderator_rejected_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the moderator rejected this post"
+    )
+    published_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the post was actually published"
+    )
+    is_client_approved = models.BooleanField(
+        default=False,
+        help_text="Whether the client has approved this post (independent of status)"
+    )
+    is_moderator_rejected = models.BooleanField(
+        default=False,
+        help_text="Whether the moderator has rejected this post"
+    )
 
     def __str__(self):
         return f"{self.title} by {self.creator.email}"
@@ -111,3 +143,89 @@ class Post(models.Model):
         Check if the post has feedback.
         """
         return bool(self.feedback and self.feedback.strip())
+    
+    def set_client_approved(self, approved_by_user=None):
+        """
+        Set the client approval timestamp and boolean, clear rejection timestamp.
+        """
+        self.client_approved_at = timezone.now()
+        self.client_rejected_at = None
+        self.is_client_approved = True
+        if approved_by_user:
+            self.last_edited_by = approved_by_user
+    
+    def set_client_rejected(self, rejected_by_user=None):
+        """
+        Set the client rejection timestamp and clear approval.
+        """
+        self.client_rejected_at = timezone.now()
+        self.client_approved_at = None
+        self.is_client_approved = False
+        if rejected_by_user:
+            self.last_edited_by = rejected_by_user
+    
+    def set_moderator_validated(self, validated_by_user=None):
+        """
+        Set the moderator validation timestamp and clear rejection.
+        """
+        self.moderator_validated_at = timezone.now()
+        self.moderator_rejected_at = None
+        self.is_moderator_rejected = False
+        if validated_by_user:
+            self.last_edited_by = validated_by_user
+    
+    def set_moderator_rejected(self, rejected_by_user=None):
+        """
+        Set the moderator rejection timestamp and boolean, clear validation.
+        """
+        self.moderator_rejected_at = timezone.now()
+        self.moderator_validated_at = None
+        self.is_moderator_rejected = True
+        if rejected_by_user:
+            self.last_edited_by = rejected_by_user
+    
+    def set_published(self, published_by_user=None):
+        """
+        Set the published timestamp.
+        """
+        self.published_at = timezone.now()
+        if published_by_user:
+            self.last_edited_by = published_by_user
+    
+    def set_resubmitted(self, resubmitted_by_user=None):
+        """
+        Reset all workflow flags and timestamps for resubmission.
+        """
+        self.client_approved_at = None
+        self.client_rejected_at = None
+        self.moderator_validated_at = None
+        self.moderator_rejected_at = None
+        self.is_client_approved = False
+        self.is_moderator_rejected = False
+        self.status = 'pending'
+        if resubmitted_by_user:
+            self.last_edited_by = resubmitted_by_user
+    
+    def has_client_approved(self):
+        """
+        Check if the client has approved this post.
+        """
+        return self.client_approved_at is not None
+    
+    def has_client_rejected(self):
+        """
+        Check if the client has rejected this post.
+        """
+        return self.client_rejected_at is not None
+    
+    def has_moderator_validated(self):
+        """
+        Check if the moderator has validated this post.
+        """
+        return self.moderator_validated_at is not None
+    
+    def has_moderator_rejected(self):
+        """
+        Check if the moderator has rejected this post.
+        """
+        return self.moderator_rejected_at is not None

@@ -11,38 +11,16 @@ from django.conf import settings
 
 from apps.accounts.tasks import send_celery_email
 from apps.notifications.services import notify_user
+from permissions.permissions import (
+    IsCommunityManager,
+    IsModeratorOrCMOrAdmin,
+    IsAssignedToPostOrAdmin
+)
 
 from .models import Post, Media
 from .serializers import PostSerializer, MediaSerializer
 from apps.accounts.models import User
 
-from django.contrib.auth import get_user_model
-User = get_user_model() 
-
-class IsCM(BasePermission):
-    """Allows access only to administrators."""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.is_community_manager
-
-
-class IsModerator(BasePermission):
-    """Allows access only to administrators."""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.is_moderator
-    
-class IsModeratorOrCM(BasePermission):
-    """Allows access only to moderators or administrators."""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and (request.user.is_moderator or request.user.is_community_manager)
-
-class IsAssignedToPost(BasePermission):
-    """
-    Custom permission to allow only assigned users to edit a post.
-    """
-
-    def has_object_permission(self, request, view, obj):
-        # Ensure the object is a Post and the user is assigned to it
-        return obj.is_user_assigned(request.user)
 
 # Cache Helpers
 def cache_key(model_name, pk=None):
@@ -68,7 +46,7 @@ def invalidate_cache(model, pk=None):
 
 #view classes     
 class CreatePostView(APIView):
-    permission_classes = [IsAuthenticated, IsModeratorOrCM]
+    permission_classes = [IsAuthenticated, IsModeratorOrCMOrAdmin]
 
     def post(self, request, client_id=None):
         data = request.data.copy()
@@ -112,6 +90,7 @@ class CreatePostView(APIView):
                     {"error": "Not assigned to this client."},
                     status=status.HTTP_403_FORBIDDEN
                 )
+        # Administrators can create posts for any client (no additional check needed)
 
         # Media Processing - Using the old approach
         if not data.get('media_files') and files:
@@ -266,7 +245,7 @@ class UpdatePostToDraftView(APIView):
     """
     View to update a scheduled post's status to 'draft'.
     """
-    permission_classes = [IsAuthenticated, IsAssignedToPost]
+    permission_classes = [IsAuthenticated, IsAssignedToPostOrAdmin]
 
     def patch(self, request, post_id):
         try:
@@ -346,7 +325,7 @@ class ListPostsView(APIView):
         return Response(cached_data, status=status.HTTP_200_OK)
 
 class UpdatePostView(APIView):
-    permission_classes = [IsAuthenticated, IsAssignedToPost]
+    permission_classes = [IsAuthenticated, IsAssignedToPostOrAdmin]
     
     def get(self, request, post_id):  
         try:
@@ -434,7 +413,7 @@ class UpdatePostView(APIView):
         return 'other'
 
 class FetchCMClientPostsView(APIView):
-    permission_classes = [IsAuthenticated, IsCM]
+    permission_classes = [IsAuthenticated, IsCommunityManager]
 
     def get(self, request):
         user = request.user
@@ -532,7 +511,7 @@ class SaveDraftView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class DeletePostView(APIView):
-    permission_classes = [IsAuthenticated, IsModeratorOrCM]
+    permission_classes = [IsAuthenticated, IsModeratorOrCMOrAdmin]
 
     def delete(self, request, post_id):
         """
@@ -570,8 +549,10 @@ class ApprovePostView(APIView):
 
     def patch(self, request, post_id):
         """
-        Approve a post by changing its status to 'scheduled'.
-        Clients can approve their own posts, moderators can approve any post.
+        Approve a post following the workflow:
+        - Client approval: keeps status 'pending' but sets is_client_approved=True
+        - Moderator validation: changes status to 'scheduled'
+        - Moderator can override client approval and directly schedule
         """
         try:
             post = Post.objects.get(id=post_id)
@@ -582,7 +563,7 @@ class ApprovePostView(APIView):
             )
         
         # Check permissions - client can approve their own posts, moderators can approve any
-        if not (request.user.is_moderator or post.client == request.user):
+        if not (request.user.is_moderator or request.user.is_administrator or post.client == request.user):
             return Response(
                 {"error": "You are not authorized to approve this post."}, 
                 status=status.HTTP_403_FORBIDDEN
@@ -595,16 +576,36 @@ class ApprovePostView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Get feedback from request (optional for approval)
+        # Get feedback and override flag from request
         feedback = request.data.get('feedback', '')
+        override_client = request.data.get('override_client', False)  # For moderator override
         
-        # Update post status to scheduled
-        post.status = 'scheduled'
         post.last_edited_by = request.user
         if feedback:
             post.feedback = feedback
             post.feedback_by = request.user
             post.feedback_at = timezone.now()
+        
+        # Handle different approval scenarios based on your workflow
+        if post.client == request.user:
+            # Client approval: Stay pending but mark as client approved
+            post.set_client_approved(request.user)
+            # Status remains 'pending' - waiting for moderator validation
+            approval_message = f"Post '{post.title}' approved by client. Waiting for moderator validation."
+            
+        elif request.user.is_moderator or request.user.is_administrator:
+            if override_client or post.is_client_approved:
+                # Moderator validates (either override or after client approval)
+                post.status = 'scheduled'
+                post.set_moderator_validated(request.user)
+                approval_message = f"Post '{post.title}' validated by moderator and scheduled."
+            else:
+                # Moderator approval without client approval (shouldn't happen in normal flow)
+                return Response(
+                    {"error": "Post must be approved by client first, or use override_client=true"}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
         post.save()
         
         # Cache invalidation
@@ -613,7 +614,6 @@ class ApprovePostView(APIView):
         
         # Notify the creator about approval
         if post.creator and post.creator != request.user:
-            approval_message = f"Your post '{post.title}' has been approved and scheduled."
             if feedback:
                 approval_message += f" Feedback: {feedback}"
             notify_user(
@@ -622,14 +622,14 @@ class ApprovePostView(APIView):
                 type="post_approved"
             )
         
-        # Notify the client about approval (if approved by moderator)
-        if post.client and post.client != request.user and request.user.is_moderator:
-            approval_message = f"The post '{post.title}' has been approved and scheduled."
+        # Notify the client about approval (if approved by moderator or admin)
+        if post.client and post.client != request.user and (request.user.is_moderator or request.user.is_administrator):
+            client_message = f"The post '{post.title}' has been validated by moderator and scheduled."
             if feedback:
-                approval_message += f" Feedback: {feedback}"
+                client_message += f" Feedback: {feedback}"
             notify_user(
                 user=post.client,
-                message=approval_message,
+                message=client_message,
                 type="post_approved"
             )
         
@@ -670,8 +670,8 @@ class RejectPostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Check permissions - client can reject their own posts, moderators can reject any
-        if not (request.user.is_moderator or post.client == request.user):
+        # Check permissions - client can reject their own posts, moderators and admins can reject any
+        if not (request.user.is_moderator or request.user.is_administrator or post.client == request.user):
             return Response(
                 {"error": "You are not authorized to reject this post."}, 
                 status=status.HTTP_403_FORBIDDEN
@@ -693,6 +693,13 @@ class RejectPostView(APIView):
         post.feedback = feedback
         post.feedback_by = request.user
         post.feedback_at = timezone.now()
+        
+        # Set appropriate rejection timestamp based on who rejected
+        if post.client == request.user:
+            post.set_client_rejected(request.user)
+        elif request.user.is_moderator or request.user.is_administrator:
+            post.set_moderator_rejected(request.user)
+        
         post.save()
         
         # Cache invalidation
@@ -708,8 +715,8 @@ class RejectPostView(APIView):
                 type="post_rejected"
             )
         
-        # Notify the client about rejection (if rejected by moderator)
-        if post.client and post.client != request.user and request.user.is_moderator:
+        # Notify the client about rejection (if rejected by moderator or admin)
+        if post.client and post.client != request.user and (request.user.is_moderator or request.user.is_administrator):
             notify_user(
                 title=f"Post '{post.title}' Rejected",
                 user=post.client,
@@ -742,7 +749,7 @@ class FetchPendingPostsView(APIView):
         """
         Fetch pending posts for the authenticated user.
         - Clients see their own pending posts
-        - Moderators see all pending posts
+        - Moderators and Administrators see all pending posts
         - CMs see pending posts for their assigned clients
         """
         cache_key = f"pending_posts:{request.user.id}"
@@ -756,8 +763,8 @@ class FetchPendingPostsView(APIView):
                     status='pending'
                 ).select_related('creator', 'client').prefetch_related('media')
             
-            elif request.user.is_moderator:
-                # Moderators see all pending posts
+            elif request.user.is_moderator or request.user.is_administrator:
+                # Moderators and Administrators see all pending posts
                 pending_posts = Post.objects.filter(
                     status='pending'
                 ).select_related('creator', 'client').prefetch_related('media')
@@ -891,8 +898,8 @@ class PublishPostView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Check permissions - moderators can publish any post, clients can publish their own
-        if not (request.user.is_moderator or post.client == request.user):
+        # Check permissions - moderators and admins can publish any post, clients can publish their own
+        if not (request.user.is_moderator or request.user.is_administrator or post.client == request.user):
             return Response(
                 {"error": "You are not authorized to publish this post."}, 
                 status=status.HTTP_403_FORBIDDEN
@@ -907,7 +914,7 @@ class PublishPostView(APIView):
         
         # Update post status to published
         post.status = 'published'
-        post.last_edited_by = request.user
+        post.set_published(request.user)
         post.save()
         
         # Cache invalidation
@@ -922,8 +929,8 @@ class PublishPostView(APIView):
                 type="post_published"
             )
         
-        # Notify the client about publication (if published by moderator)
-        if post.client and post.client != request.user and request.user.is_moderator:
+        # Notify the client about publication (if published by moderator or admin)
+        if post.client and post.client != request.user and (request.user.is_moderator or request.user.is_administrator):
             notify_user(
                 user=post.client,
                 message=f"The post '{post.title}' has been published successfully!",
@@ -968,13 +975,23 @@ class ResubmitPostView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Update post status to pending
+        # Update post status to pending and reset workflow flags
         post.status = 'pending'
         post.last_edited_by = request.user
+        
         # Clear previous feedback when resubmitting
         post.feedback = None
         post.feedback_by = None
         post.feedback_at = None
+        
+        # Reset approval/rejection flags for fresh workflow
+        post.is_client_approved = False
+        post.is_moderator_rejected = False
+        post.client_approved_at = None
+        post.client_rejected_at = None
+        post.moderator_validated_at = None
+        post.moderator_rejected_at = None
+        
         post.save()
         
         # Cache invalidation
@@ -1013,8 +1030,8 @@ class CancelApprovalView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Check permissions - only moderators can cancel approval
-        if not request.user.is_moderator:
+        # Check permissions - moderators and admins can cancel approval
+        if not (request.user.is_moderator or request.user.is_administrator):
             return Response(
                 {"error": "You are not authorized to cancel approval for this post."}, 
                 status=status.HTTP_403_FORBIDDEN
@@ -1062,6 +1079,95 @@ class CancelApprovalView(APIView):
             "message": "Post approval cancelled successfully.",
             "post": PostSerializer(post).data,
             "feedback": feedback
+        }
+        
+        return Response(response_data, status=status.HTTP_200_OK)
+
+class ModeratorValidatePostView(APIView):
+    """
+    Moderator validation view - validates posts that are pending with client approval
+    or can override client approval requirement.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, post_id):
+        """
+        Validate a post by moderator following the workflow:
+        - Can validate posts that are pending + client approved
+        - Can override client approval with override_client=true
+        """
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "Post not found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permissions - only moderators and admins can validate
+        if not (request.user.is_moderator or request.user.is_administrator):
+            return Response(
+                {"error": "You are not authorized to validate this post."}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Check if post is in pending status
+        if post.status != 'pending':
+            return Response(
+                {"error": "Only pending posts can be validated."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get parameters from request
+        feedback = request.data.get('feedback', '')
+        override_client = request.data.get('override_client', False)
+        
+        # Check workflow rules
+        if not override_client and not post.is_client_approved:
+            return Response(
+                {"error": "Post must be approved by client first, or use override_client=true"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Validate the post
+        post.status = 'scheduled'
+        post.last_edited_by = request.user
+        if feedback:
+            post.feedback = feedback
+            post.feedback_by = request.user
+            post.feedback_at = timezone.now()
+        
+        post.set_moderator_validated(request.user)
+        post.save()
+        
+        # Cache invalidation
+        invalidate_cache(Post)
+        invalidate_cache(Post, post_id)
+        
+        # Notifications
+        validation_message = f"Post '{post.title}' validated by moderator and scheduled."
+        if feedback:
+            validation_message += f" Feedback: {feedback}"
+        
+        # Notify the creator
+        if post.creator and post.creator != request.user:
+            notify_user(
+                user=post.creator,
+                message=validation_message,
+                type="post_validated"
+            )
+        
+        # Notify the client
+        if post.client and post.client != request.user:
+            notify_user(
+                user=post.client,
+                message=validation_message,
+                type="post_validated"
+            )
+        
+        response_data = {
+            "message": "Post validated successfully.",
+            "post": PostSerializer(post).data
         }
         
         return Response(response_data, status=status.HTTP_200_OK)

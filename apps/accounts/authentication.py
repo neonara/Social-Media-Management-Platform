@@ -1,12 +1,9 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
+from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import UntypedToken
-from django.contrib.auth.models import AnonymousUser
-from django.contrib.auth import get_user_model
-from rest_framework import authentication
 from rest_framework import exceptions
 
-User = get_user_model()
+from apps.accounts.models import User
 
 
 class JWTCookieAuthentication(JWTAuthentication):

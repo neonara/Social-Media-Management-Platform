@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import UpdatePostToDraftView, GetPostCreatorsView, FetchCMClientPostsView, SaveDraftView, CreatePostView, ListPostsView, UpdatePostView, MediaListView, MediaDetailView, FetchDraftsView, DeletePostView, ApprovePostView, RejectPostView, FetchPendingPostsView, PostFeedbackView, GetPostByIdView, PublishPostView, ResubmitPostView, CancelApprovalView
+from .views import UpdatePostToDraftView, GetPostCreatorsView, FetchCMClientPostsView, SaveDraftView, CreatePostView, ListPostsView, UpdatePostView, MediaListView, MediaDetailView, FetchDraftsView, DeletePostView, ApprovePostView, RejectPostView, FetchPendingPostsView, PostFeedbackView, GetPostByIdView, PublishPostView, ResubmitPostView, CancelApprovalView, ModeratorValidatePostView
 
 urlpatterns = [
     path('posts/', ListPostsView.as_view(), name='list-posts'),
@@ -10,6 +10,7 @@ urlpatterns = [
     path('posts/<int:post_id>/', GetPostByIdView.as_view(), name='get-post-by-id'),
     path('posts/<int:post_id>/delete/', DeletePostView.as_view(), name='delete-post'),  
     path('posts/<int:post_id>/approve/', ApprovePostView.as_view(), name='approve-post'),
+    path('posts/<int:post_id>/validate/', ModeratorValidatePostView.as_view(), name='validate-post'),
     path('posts/<int:post_id>/reject/', RejectPostView.as_view(), name='reject-post'),
     path('posts/<int:post_id>/publish/', PublishPostView.as_view(), name='publish-post'),
     path('posts/<int:post_id>/resubmit/', ResubmitPostView.as_view(), name='resubmit-post'),

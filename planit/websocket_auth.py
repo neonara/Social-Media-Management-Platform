@@ -8,9 +8,7 @@ class TokenAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
         # Import inside the method to avoid AppRegistryNotReady error
         from django.contrib.auth.models import AnonymousUser
-        from django.contrib.auth import get_user_model
-        
-        User = get_user_model()
+        from apps.accounts.models import User
         scope['user'] = AnonymousUser()
         
         # Get the token from query string
