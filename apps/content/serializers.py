@@ -117,6 +117,20 @@ class PostSerializer(serializers.ModelSerializer):
 
         return instance
 
+    def save(self, **kwargs):
+        # Extract last_edited_by from kwargs if present
+        last_edited_by = kwargs.pop('last_edited_by', None)
+        
+        # Call parent save method
+        instance = super().save(**kwargs)
+        
+        # Set last_edited_by if provided and save again
+        if last_edited_by is not None:
+            instance.last_edited_by = last_edited_by
+            instance.save(update_fields=['last_edited_by'])
+            
+        return instance
+
     def determine_file_type(self, file_name):
         if file_name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp')):
             return 'image'

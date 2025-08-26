@@ -308,8 +308,8 @@ INSTAGRAM_SCOPES = "instagram_basic,instagram_content_publish,instagram_manage_i
 INSTAGRAM_REDIRECT_URI = f"{BACKEND_URL}/api/instagram/callback/"
 
 LINKEDIN_REDIRECT_URI = f"{BACKEND_URL}/api/linkedin/callback/"
-# Updated LinkedIn scopes for Community Management API and organization management
-LINKEDIN_SCOPES = "openid,profile,email,w_member_social,rw_organization_admin,w_organization_social,r_organization_social,w_organization_social_feed,r_organization_social_feed"
+# Basic LinkedIn scopes - organization scopes commented out until approved by LinkedIn
+LINKEDIN_SCOPES = "openid,profile,email,w_member_social"  # ,rw_organization_admin,w_organization_social,r_organization_social,w_organization_social_feed,r_organization_social_feed
 LINKEDIN_CLIENT_ID = os.getenv("LINKEDIN_CLIENT_ID")
 LINKEDIN_CLIENT_SECRET = os.getenv("LINKEDIN_CLIENT_SECRET")
 
@@ -327,9 +327,6 @@ CELERY_RESULT_BACKEND = f'redis://{REDIS_HOST}:{REDIS_PORT}/0'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'UTC'
-
-# Celery Beat Schedule
-from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {
     'check-scheduled-posts': {

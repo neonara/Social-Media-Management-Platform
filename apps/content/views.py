@@ -1,13 +1,12 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated, BasePermission
+from rest_framework.permissions import IsAuthenticated
 from rest_framework import generics
 from django.core.cache import cache
 from django.db import models
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from django.conf import settings
 
 from apps.accounts.tasks import send_celery_email
 from apps.notifications.services import notify_user
@@ -37,12 +36,35 @@ def get_cached_or_query(model, pk=None):
     return data
 
 def invalidate_cache(model, pk=None):
-    keys = [
-        f"model_{model.__name__.lower()}_{pk if pk else 'all'}",
-        f"user_posts_*",  # Will need manual handling for pattern deletion
-    ]
-    for key in keys:
-        cache.delete(key)
+    """Clear post-related cached data using Redis pattern deletion"""
+    from django.core.cache import cache
+    from django_redis import get_redis_connection
+    
+    try:
+        # Get Redis connection
+        redis_conn = get_redis_connection("default")
+        
+        # Clear all user-specific post caches
+        pattern = "user_posts_*"
+        keys = redis_conn.keys(pattern)
+        if keys:
+            redis_conn.delete(*keys)
+        
+        # Clear general post cache
+        cache.delete('all_posts')
+        cache.delete('dashboard_posts')
+        
+        # Clear specific model caches
+        if pk:
+            cache.delete(f"model_{model.__name__.lower()}_{pk}")
+            cache.delete(f"post:{pk}")
+            cache.delete(f"post_detail:{pk}")
+        else:
+            cache.delete(f"model_{model.__name__.lower()}_all")
+            
+    except Exception as e:
+        # Fallback to Django cache if Redis connection fails
+        cache.clear()
 
 #view classes     
 class CreatePostView(APIView):
@@ -284,8 +306,11 @@ class ListPostsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        # Check for bypass_cache parameter
+        bypass_cache = request.query_params.get('bypassCache', 'false').lower() == 'true'
+        
         cache_key = f"user_posts:{request.user.id}"
-        cached_data = cache.get(cache_key)
+        cached_data = None if bypass_cache else cache.get(cache_key)
 
         if cached_data is None:
             # Build the query based on user role
@@ -343,6 +368,9 @@ class UpdatePostView(APIView):
             post = Post.objects.get(id=post_id)
             self.check_object_permissions(request, post)
 
+            # Store original status to check if it was rejected
+            original_status = post.status
+
             # Rest of your update logic...
             data = request.data.copy()
             media_files = request.FILES.getlist('media_files', [])
@@ -365,12 +393,48 @@ class UpdatePostView(APIView):
             )
 
             if serializer.is_valid():
+                # Check if this was a rejected post - if so, reset to pending
+                if original_status == 'rejected':
+                    # Reset status to pending for client approval
+                    post.status = 'pending'
+                    
+                    # Clear previous feedback and rejection data
+                    post.feedback = None
+                    post.feedback_by = None
+                    post.feedback_at = None
+                    
+                    # Reset approval/rejection flags for fresh workflow
+                    post.is_client_approved = False
+                    post.is_moderator_rejected = False
+                    post.client_approved_at = None
+                    post.client_rejected_at = None
+                    post.moderator_validated_at = None
+                    post.moderator_rejected_at = None
+
                 post = serializer.save(last_edited_by=request.user)
 
                 
                 if media_files:
                     self._handle_media_upload(post, media_files, request.user)
 
+                # If post was rejected and is now pending, notify client for approval
+                if original_status == 'rejected' and post.status == 'pending':
+                    if post.client:
+                        notify_user(
+                            user=post.client,
+                            title="Updated Post Pending Your Approval",
+                            message=f"The post '{post.title}' has been updated and is now pending your approval.",
+                            type="post_pending_approval"
+                        )
+                        
+                        # Send email notification
+                        from apps.accounts.tasks import send_celery_email
+                        send_celery_email.delay(
+                            'Updated Post Pending Your Approval',
+                            f'Hello {post.client.full_name or post.client.email}, The post titled "{post.title}" has been updated and is now pending your approval. Please log in to review and approve or reject this post.',
+                            [post.client.email],
+                            fail_silently=False
+                        )
                 
                 updated_data = PostSerializer(post, context={'request': request}).data
                 cache.set(f"post:{post_id}", updated_data, timeout=60*60)
@@ -472,9 +536,12 @@ class FetchDraftsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        # Check for bypass_cache parameter
+        bypass_cache = request.query_params.get('bypassCache', 'false').lower() == 'true'
+        
         # Cache key for user drafts
         cache_key = f"user_drafts:{request.user.id}"
-        cached_data = cache.get(cache_key)
+        cached_data = None if bypass_cache else cache.get(cache_key)
 
         if cached_data is None:
             # Fetch drafts where the creator is the logged-in user
@@ -488,6 +555,7 @@ class FetchDraftsView(APIView):
             cached_data = serializer.data
 
             # Cache the serialized drafts for 5 minutes
+            cache.set(cache_key, cached_data, 300)
             cache.set(cache_key, cached_data, timeout=60 * 5)
 
         return Response(cached_data, status=status.HTTP_200_OK)
@@ -618,6 +686,7 @@ class ApprovePostView(APIView):
                 approval_message += f" Feedback: {feedback}"
             notify_user(
                 user=post.creator,
+                title="Post Approved",
                 message=approval_message,
                 type="post_approved"
             )
@@ -629,6 +698,7 @@ class ApprovePostView(APIView):
                 client_message += f" Feedback: {feedback}"
             notify_user(
                 user=post.client,
+                title="Post Validated",
                 message=client_message,
                 type="post_approved"
             )
@@ -640,6 +710,7 @@ class ApprovePostView(APIView):
                 approval_message += f" Client feedback: {feedback}"
             notify_user(
                 user=post.creator,
+                title="Client Approved Post",
                 message=approval_message,
                 type="post_approved"
             )
@@ -660,7 +731,9 @@ class RejectPostView(APIView):
     def patch(self, request, post_id):
         """
         Reject a post by changing its status to 'rejected'.
-        Clients can reject their own posts, moderators can reject any post.
+        - For pending posts: Clients, moderators, and admins can reject
+        - For scheduled posts: Only the client, assigned moderator, or administrator can reject
+        - Community managers cannot reject scheduled posts
         """
         try:
             post = Post.objects.get(id=post_id)
@@ -677,12 +750,26 @@ class RejectPostView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        # Check if post is in pending status
-        if post.status != 'pending':
+        # Check if post can be rejected - pending and scheduled posts can be rejected
+        if post.status not in ['pending', 'scheduled']:
             return Response(
-                {"error": "Only pending posts can be rejected."}, 
+                {"error": "Only pending or scheduled posts can be rejected."}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
+            
+        # Additional check: if post is scheduled, only specific users can reject it
+        if post.status == 'scheduled':
+            can_reject_scheduled = (
+                request.user == post.client or  # The client
+                request.user.is_administrator or  # Admin or super admin
+                (request.user.is_moderator and post.client.assigned_moderator == request.user)  # Assigned moderator
+            )
+            
+            if not can_reject_scheduled:
+                return Response(
+                    {"error": "Only the client, assigned moderator, or administrator can reject scheduled posts."}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
         
         # Get feedback from request
         feedback = request.data.get('feedback', 'No feedback provided')
@@ -925,6 +1012,7 @@ class PublishPostView(APIView):
         if post.creator and post.creator != request.user:
             notify_user(
                 user=post.creator,
+                title="Post Published",
                 message=f"Your post '{post.title}' has been published successfully!",
                 type="post_published"
             )
@@ -933,6 +1021,7 @@ class PublishPostView(APIView):
         if post.client and post.client != request.user and (request.user.is_moderator or request.user.is_administrator):
             notify_user(
                 user=post.client,
+                title="Post Published",
                 message=f"The post '{post.title}' has been published successfully!",
                 type="post_published"
             )
@@ -998,10 +1087,29 @@ class ResubmitPostView(APIView):
         invalidate_cache(Post)
         invalidate_cache(Post, post_id)
         
+        # Notify client about resubmission for approval
+        if post.client:
+            notify_user(
+                user=post.client,
+                title="Post Resubmitted for Your Approval",
+                message=f"The post '{post.title}' has been resubmitted and is pending your approval. Please review and approve or reject it.",
+                type="post_pending_approval"
+            )
+            
+            # Send email notification to client
+            from apps.accounts.tasks import send_celery_email
+            send_celery_email.delay(
+                'Post Resubmitted for Your Approval',
+                f'Hello {post.client.full_name or post.client.email}, The post titled "{post.title}" has been resubmitted and is now pending your approval. Please log in to review and approve or reject this post.',
+                [post.client.email],
+                fail_silently=False
+            )
+        
         # Notify moderators about resubmission
         if post.client and post.client.assigned_moderator:
             notify_user(
                 user=post.client.assigned_moderator,
+                title="Post Resubmitted",
                 message=f"The post '{post.title}' has been resubmitted for review.",
                 type="post_resubmitted"
             )
@@ -1063,6 +1171,7 @@ class CancelApprovalView(APIView):
         if post.creator and post.creator != request.user:
             notify_user(
                 user=post.creator,
+                title="Post Approval Cancelled",
                 message=f"The approval for post '{post.title}' has been cancelled. Feedback: {feedback}",
                 type="post_approval_cancelled"
             )
@@ -1071,6 +1180,7 @@ class CancelApprovalView(APIView):
         if post.client and post.client != request.user:
             notify_user(
                 user=post.client,
+                title="Post Approval Cancelled",
                 message=f"The approval for post '{post.title}' has been cancelled. Feedback: {feedback}",
                 type="post_approval_cancelled"
             )
@@ -1153,6 +1263,7 @@ class ModeratorValidatePostView(APIView):
         if post.creator and post.creator != request.user:
             notify_user(
                 user=post.creator,
+                title="Post Validated",
                 message=validation_message,
                 type="post_validated"
             )
@@ -1161,6 +1272,7 @@ class ModeratorValidatePostView(APIView):
         if post.client and post.client != request.user:
             notify_user(
                 user=post.client,
+                title="Post Validated",
                 message=validation_message,
                 type="post_validated"
             )

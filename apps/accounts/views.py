@@ -16,7 +16,7 @@ from django.core.cache import cache
 
 from .serializers import PasswordResetRequestSerializer, PasswordResetConfirmSerializer, AssignModeratorSerializer, GetUserSerializer, UserLoginSerializer, CreateUserSerializer, FirstTimePasswordChangeSerializer ,AssigncommunityManagerstoModeratorsSerializer, RemoveCMsFromClientSerializer, AssignCMToClientSerializer, CreateCMSerializer
 
-from .services import get_cached_user_data  # Import the caching service
+from .services import get_cached_user_data, get_cached_user_by_id, get_cached_users_list, notify_user_data_updated, notify_assignment_changed, notify_user_deleted, notify_user_created  # Import the caching service
 from apps.notifications.services import notify_user  # Import the notification service 
 
 #permissions
@@ -151,40 +151,19 @@ class GetUserByIdView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request, user_id):
-        try:
-            user = User.objects.get(pk=user_id)
-            data = {
-                "id": user.id,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-                "phone_number": user.phone_number,
-                "email": user.email,
-                "is_active": user.is_active,
-                "is_staff": user.is_staff,
-                "is_administrator": user.is_administrator,
-                "is_superadministrator": user.is_superadministrator,
-                "is_moderator": user.is_moderator,
-                "is_community_manager": user.is_community_manager,
-                "is_client": user.is_client,
-            }
-            
-            # Add related information based on role
-            if user.is_client and user.assigned_moderator:
-                data["assigned_moderator"] = user.assigned_moderator.full_name
-            elif user.is_moderator:
-                assigned_cms = user.assigned_communitymanagers.all()
-                data["assigned_communitymanagers"] = [
-                    {"id": cm.id, "full_name": cm.full_name}
-                    for cm in assigned_cms
-                ] if assigned_cms else []
-            
-            return Response(data, status=status.HTTP_200_OK)
-            
-        except User.DoesNotExist:
+        # Check for bypass_cache parameter
+        bypass_cache = request.query_params.get('bypassCache', 'false').lower() == 'true'
+        
+        # Use cached service function
+        user_data = get_cached_user_by_id(user_id, bypass_cache=bypass_cache)
+        
+        if user_data is None:
             return Response(
                 {"error": "User not found"}, 
                 status=status.HTTP_404_NOT_FOUND
             )
+            
+        return Response(user_data, status=status.HTTP_200_OK)
 
 class FetchEmails(APIView):
     permission_classes = [IsAuthenticated, IsAdminOrSuperAdmin]  # Only admin can fetch emails
@@ -355,6 +334,14 @@ class CreateUserView(APIView):
             try:
                 user = serializer.save()
                 
+                # Send WebSocket notification for user creation
+                from .services import build_user_data
+                user_data = build_user_data(user)
+                notify_user_created(
+                    user_id=user.id,
+                    created_by_id=request.user.id,
+                    user_data=user_data
+                )
                 
                 password = getattr(serializer, 'password', None)
                 
@@ -634,6 +621,16 @@ class UpdateUserView(UpdateAPIView):
             if field not in restricted_fields:
                 updated_fields.append(field)
 
+        # Send WebSocket notification for user data update
+        from .services import build_user_data
+        user_data = build_user_data(instance)
+        notify_user_data_updated(
+            user_id=instance.id,
+            updated_by_id=request.user.id,
+            fields_changed=updated_fields,
+            user_data=user_data
+        )
+
         notify_user(
             user=instance,
             title="Profile Updated",
@@ -641,30 +638,29 @@ class UpdateUserView(UpdateAPIView):
             type="profile_update"
         )
 
-        # Use the centralized function to clear user cache
-        from apps.accounts.services import clear_user_cache
-        clear_user_cache(instance.id)
+        # Use the centralized function to clear user cache (this is now handled by notify_user_data_updated)
+        # from apps.accounts.services import clear_user_cache
+        # clear_user_cache(instance.id)
         
-        # For Redis-specific cache clearing with django_redis
-        # Invalidate the cache_page decorator cache for CurrentUserView
-        try:
-            # Get the Redis client from django_redis
-            from django_redis import get_redis_connection
-            redis_conn = get_redis_connection("default")
-            
-            # Clear cache patterns related to the user
-            cache_key_pattern = f"*:views.decorators.cache.cache_page.*user*{instance.id}*"
-            for key in redis_conn.keys(cache_key_pattern):
-                redis_conn.delete(key)
-                
-            # Also clear the current-user patterns
-            current_user_pattern = "*:current-user*"
-            for key in redis_conn.keys(current_user_pattern):
-                redis_conn.delete(key)
-                
-        except Exception as e:
-            # Log the error but don't interrupt the response
-            print(f"Error clearing Redis cache: {str(e)}")
+        # For Redis-specific cache clearing with django_redis (now handled by WebSocket notification function)
+        # try:
+        #     # Get the Redis client from django_redis
+        #     from django_redis import get_redis_connection
+        #     redis_conn = get_redis_connection("default")
+        #     
+        #     # Clear cache patterns related to the user
+        #     cache_key_pattern = f"*:views.decorators.cache.cache_page.*user*{instance.id}*"
+        #     for key in redis_conn.keys(cache_key_pattern):
+        #         redis_conn.delete(key)
+        #         
+        #     # Also clear the current-user patterns
+        #     current_user_pattern = "*:current-user*"
+        #     for key in redis_conn.keys(current_user_pattern):
+        #         redis_conn.delete(key)
+        #         
+        # except Exception as e:
+        #     # Log the error but don't interrupt the response
+        #     print(f"Error clearing Redis cache: {str(e)}")
 
         return Response(serializer.data, status=status.HTTP_200_OK)
     
@@ -705,6 +701,19 @@ class AssignCMToClientView(APIView):
             client.assigned_communitymanagerstoclient.add(community_manager)
             client.save()
 
+            # Send WebSocket notification for assignment change
+            notify_assignment_changed(
+                user_id=client.id,
+                target_id=community_manager.id,
+                assignment_type='cm_client',
+                action='assigned',
+                updated_by_id=request.user.id,
+                data={
+                    'client_name': client.full_name or client.email,
+                    'cm_name': community_manager.full_name or community_manager.email
+                }
+            )
+
             # Notify the community manager about the assignment
             notify_user(
                 user=community_manager,
@@ -736,6 +745,19 @@ class RemoveCommunityManagerFromModeratorView(APIView):
             if cm_to_remove in moderator.assigned_communitymanagers.all():
                 moderator.assigned_communitymanagers.remove(cm_to_remove)
 
+                # Send WebSocket notification for assignment change (moderator-cm)
+                notify_assignment_changed(
+                    user_id=moderator.id,
+                    target_id=cm_to_remove.id,
+                    assignment_type='cm_moderator',
+                    action='removed',
+                    updated_by_id=request.user.id,
+                    data={
+                        'moderator_name': moderator.full_name or moderator.email,
+                        'cm_name': cm_to_remove.full_name or cm_to_remove.email
+                    }
+                )
+
                 # Now, unassign this CM from all clients associated with this moderator
                 clients_with_this_moderator = User.objects.filter(
                     is_client=True, assigned_moderator=moderator
@@ -744,6 +766,19 @@ class RemoveCommunityManagerFromModeratorView(APIView):
                     if cm_to_remove in client.assigned_communitymanagerstoclient.all():
                         client.assigned_communitymanagerstoclient.remove(cm_to_remove)
                         client.save()  # Important to save the client object
+
+                        # Send WebSocket notification for client-cm assignment change
+                        notify_assignment_changed(
+                            user_id=client.id,
+                            target_id=cm_to_remove.id,
+                            assignment_type='cm_client',
+                            action='removed',
+                            updated_by_id=request.user.id,
+                            data={
+                                'client_name': client.full_name or client.email,
+                                'cm_name': cm_to_remove.full_name or cm_to_remove.email
+                            }
+                        )
 
                         # Notify the client about the removal
                         notify_user(
@@ -793,6 +828,19 @@ class RemoveModeratorFromClientView(APIView):
             client.assigned_communitymanagerstoclient.clear()
 
             client.save()
+
+            # Send WebSocket notification for assignment change
+            notify_assignment_changed(
+                user_id=client.id,
+                target_id=moderator.id,
+                assignment_type='moderator_client',
+                action='removed',
+                updated_by_id=request.user.id,
+                data={
+                    'client_name': client.full_name or client.email,
+                    'moderator_name': moderator.full_name or moderator.email
+                }
+            )
 
             # Notify the moderator about the removal
             notify_user(
@@ -891,50 +939,14 @@ class AssignedClientsView(APIView):
 
 class ListUsers(APIView):
     permission_classes = [IsAdminOrSuperAdmin]  # Only authenticated users can access this view
+    
     def get(self, request):
-        users = User.objects.all()
-        user_data = []
-
-        for user in users:
-            # Determine the single role based on priority
-            role = None
-            if user.is_superadministrator:
-                role = "superadministrator"
-            elif user.is_administrator:
-                role = "administrator"
-            elif user.is_moderator:
-                role = "moderator"
-            elif user.is_community_manager:
-                role = "community_manager"
-            elif user.is_client:
-                role = "client"
-            else:
-                role = "user"  # Default role if none of the above
-
-            data = {
-                "id": user.id,
-                "full_name": user.full_name,
-                "email": user.email,
-                "phone_number": user.phone_number,
-                "user_image": user.user_image.url if user.user_image else None,
-                "role": role,  # Single role instead of array
-            }
-
-          
-            if user.is_client and user.assigned_moderator:
-                data["assigned_moderator"] = user.assigned_moderator.full_name
-            else:
-                data["assigned_moderator"] = None
-
-            
-            if user.is_moderator:
-                assigned_cms = user.assigned_communitymanagers.all()
-                data["assigned_communitymanagers"] = ", ".join([cm.full_name for cm in assigned_cms]) if assigned_cms else None
-            else:
-                data["assigned_communitymanagers"] = None
-
-            user_data.append(data)
-
+        # Check for bypass_cache parameter
+        bypass_cache = request.query_params.get('bypassCache', 'false').lower() == 'true'
+        
+        # Use cached service function
+        user_data = get_cached_users_list(bypass_cache=bypass_cache)
+        
         return Response(user_data, status=status.HTTP_200_OK)
 
 class AssignModeratorToClientView(APIView):
@@ -956,6 +968,19 @@ class AssignModeratorToClientView(APIView):
 
             client.assigned_moderator = moderator
             client.save()
+
+            # Send WebSocket notification for assignment change
+            notify_assignment_changed(
+                user_id=client.id,
+                target_id=moderator.id,
+                assignment_type='moderator_client',
+                action='assigned',
+                updated_by_id=request.user.id,
+                data={
+                    'client_name': client.full_name or client.email,
+                    'moderator_name': moderator.full_name or moderator.email
+                }
+            )
 
             # Notify the moderator
             notify_user(
@@ -1004,6 +1029,19 @@ class AssignCommunityManagerToModeratorView(APIView):
 
             moderator.assigned_communitymanagers.add(cm)
             moderator.save()
+
+            # Send WebSocket notification for assignment change
+            notify_assignment_changed(
+                user_id=moderator.id,
+                target_id=cm.id,
+                assignment_type='cm_moderator',
+                action='assigned',
+                updated_by_id=request.user.id,
+                data={
+                    'moderator_name': moderator.full_name or moderator.email,
+                    'cm_name': cm.full_name or cm.email
+                }
+            )
 
             # Notify the community manager
             notify_user(
@@ -1130,8 +1168,22 @@ class AdminDeleteUserView(APIView):
                     )
 
             # Proceed with deletion
+            from .services import build_user_data
+            
+            # Get user data before deletion for WebSocket notification
+            user_data = build_user_data(user_to_delete)
             email = user_to_delete.email  # Store email before deletion for the response message
+            user_id_to_delete = user_to_delete.id  # Store ID before deletion
+            
             user_to_delete.delete()
+            
+            # Send WebSocket notification for user deletion
+            notify_user_deleted(
+                user_id=user_id_to_delete,
+                deleted_by_id=request.user.id,
+                user_data=user_data
+            )
+            
             return Response(
                 {'message': f'User with ID {user_id} (email: {email}) has been deleted successfully'},
                 status=status.HTTP_200_OK
@@ -1145,8 +1197,11 @@ class AdminDeleteUserView(APIView):
 class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
-        # Use the cached user data function - it will get fresh data if cache is cleared
-        user_data = get_cached_user_data(request.user)
+        # Check for bypass_cache parameter
+        bypass_cache = request.query_params.get('bypassCache', 'false').lower() == 'true'
+        
+        # Use the cached user data function with bypass option
+        user_data = get_cached_user_data(request.user, force_refresh=bypass_cache)
         return Response(user_data)
 
 class GetUserProfileView(APIView):

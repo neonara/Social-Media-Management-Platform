@@ -4,8 +4,6 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.shortcuts import redirect
-from django.core.files import File
-from django.core.files.temp import NamedTemporaryFile
 
 from apps.social_media.models import SocialPage
 from apps.social_media.serializers import SocialPageSerializer
@@ -74,6 +72,13 @@ class LinkedInConnectView(APIView):
             f"client_id={LI_CLIENT_ID}&redirect_uri={LI_REDIRECT_URI}&"
             f"scope={LI_SCOPES}&response_type=code&state={full_state}"
         )
+        
+        # Log the generated URL for debugging
+        logger.info(f"Generated LinkedIn OAuth URL: {url}")
+        logger.info(f"LinkedIn Client ID: {LI_CLIENT_ID}")
+        logger.info(f"LinkedIn Redirect URI: {LI_REDIRECT_URI}")
+        logger.info(f"LinkedIn Scopes: {LI_SCOPES}")
+        
         return redirect(url)
 
 class LinkedInCallbackView(APIView):
@@ -81,12 +86,24 @@ class LinkedInCallbackView(APIView):
     authentication_classes = []  # Disable authentication for this view completely
     
     def get(self, request):
+        # Log all incoming parameters for debugging
+        logger.info(f"LinkedIn callback received parameters: {dict(request.GET)}")
+        logger.info(f"LinkedIn callback full URL: {request.build_absolute_uri()}")
+        
         # Get the code and state from query parameters (not headers)
         code = request.GET.get("code")  # Using request.GET for query parameters
         state = request.GET.get("state")
+        error = request.GET.get("error")
+        error_description = request.GET.get("error_description")
+        
+        # Check for OAuth error first
+        if error:
+            logger.error(f"LinkedIn OAuth error: {error} - {error_description}")
+            return redirect(f"http://localhost:3000/settings?error=LinkedIn_OAuth_error:{error_description or error}")
         
         if not code:
             logger.error("LinkedIn callback: Missing authorization code")
+            logger.error(f"Available parameters: {list(request.GET.keys())}")
             return redirect("http://localhost:3000/settings?error=Missing_authorization_code")
         
         try:
