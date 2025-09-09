@@ -27,13 +27,18 @@ def cache_key(model_name, pk=None):
     return f"{prefix}:{pk}" if pk else f"{prefix}:all"
 
 def get_cached_or_query(model, pk=None):
-    key = f"model_{model.__name__.lower()}_{pk if pk else 'all'}"
-    data = cache.get(key)
+    # TEMPORARY: Override caching until cache issues are resolved
+    # Always query directly from database
+    return model.objects.get(pk=pk) if pk else model.objects.all()
     
-    if data is None:
-        data = model.objects.get(pk=pk) if pk else model.objects.all()
-        cache.set(key, data)
-    return data
+    # Original cached implementation (disabled temporarily):
+    # key = f"model_{model.__name__.lower()}_{pk if pk else 'all'}"
+    # data = cache.get(key)
+    # 
+    # if data is None:
+    #     data = model.objects.get(pk=pk) if pk else model.objects.all()
+    #     cache.set(key, data)
+    # return data
 
 def invalidate_cache(model, pk=None):
     """Clear post-related cached data using Redis pattern deletion"""
@@ -44,11 +49,19 @@ def invalidate_cache(model, pk=None):
         # Get Redis connection
         redis_conn = get_redis_connection("default")
         
-        # Clear all user-specific post caches
-        pattern = "user_posts_*"
-        keys = redis_conn.keys(pattern)
-        if keys:
-            redis_conn.delete(*keys)
+        # Clear all user-specific post caches for all users
+        patterns = [
+            "user_posts:*",
+            "cm_posts:*", 
+            "pending_posts:*",
+            "scheduled_posts_*",
+            "draft_posts_*",
+        ]
+        
+        for pattern in patterns:
+            keys = redis_conn.keys(pattern)
+            if keys:
+                redis_conn.delete(*keys)
         
         # Clear general post cache
         cache.delete('all_posts')
@@ -62,7 +75,10 @@ def invalidate_cache(model, pk=None):
         else:
             cache.delete(f"model_{model.__name__.lower()}_all")
             
+        print(f"Cache invalidated for {model.__name__} (pk={pk})")
+            
     except Exception as e:
+        print(f"Error invalidating cache: {e}")
         # Fallback to Django cache if Redis connection fails
         cache.clear()
 
@@ -145,8 +161,8 @@ class CreatePostView(APIView):
                 post = serializer.save(creator=request.user, client=client)
                 scheduled_for = post.scheduled_for  # This should now be a datetime object
 
-                # Notify the client about the post creation for review
-                if post.status == 'pending':
+                # Notify the client about the post creation for review (avoid self-notification)
+                if post.status == 'pending' and client != request.user:
                     notify_user(
                         user=client,
                         title="Post Pending Your Approval",
@@ -162,8 +178,8 @@ class CreatePostView(APIView):
                         [client.email],
                         fail_silently=False
                     )
-                else:
-                    # Original notification for drafts or other statuses
+                elif post.status != 'pending' and client != request.user:
+                    # Original notification for drafts or other statuses (avoid self-notification)
                     notify_user(
                         user=client,
                         title="Post is created",
@@ -180,10 +196,11 @@ class CreatePostView(APIView):
                         fail_silently=False
                     )
 
+                # TEMPORARY: Skip caching posts until cache issues are resolved
                 # Cache the newly created post
                 post_data = PostSerializer(post, context={'request': request}).data
-                cache.set(f"post:{post.id}", post_data, timeout=60*60)  # Cache for 1 hour
-                cache.set(f"post_detail:{post.id}", post_data, timeout=60*60)
+                # cache.set(f"post:{post.id}", post_data, timeout=60*60)  # Cache for 1 hour
+                # cache.set(f"post_detail:{post.id}", post_data, timeout=60*60)
                 
                 # Invalidate list caches
                 invalidate_cache(Post)
@@ -306,8 +323,9 @@ class ListPostsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Check for bypass_cache parameter
-        bypass_cache = request.query_params.get('bypassCache', 'false').lower() == 'true'
+        # TEMPORARY: Override caching for posts until cache issues are resolved
+        # Check for bypass_cache parameter (always bypass for now)
+        bypass_cache = True  # request.query_params.get('bypassCache', 'false').lower() == 'true'
         
         cache_key = f"user_posts:{request.user.id}"
         cached_data = None if bypass_cache else cache.get(cache_key)
@@ -319,10 +337,12 @@ class ListPostsView(APIView):
                 posts = Post.objects.filter(client=request.user)
                 
             elif request.user.is_community_manager:
-                # CMs see posts they created + posts for clients they're assigned to
+                # CMs see posts they created + ALL posts for their assigned clients
+                assigned_clients = request.user.clients.all()
+                
                 posts = Post.objects.filter(
                     models.Q(creator=request.user) |  # Posts they created
-                    models.Q(client__assigned_communitymanagerstoclient=request.user)  # Posts for their assigned clients
+                    models.Q(client__in=assigned_clients)  # All posts for their assigned clients
                 ).distinct()
                 
             elif request.user.is_moderator:
@@ -345,8 +365,9 @@ class ListPostsView(APIView):
             serializer = PostSerializer(posts, many=True, context={'request': request})
             cached_data = serializer.data
 
+            # TEMPORARY: Skip caching posts until cache issues are resolved
             # Cache the serialized data
-            cache.set(cache_key, cached_data, timeout=60 * 10)  
+            # cache.set(cache_key, cached_data, timeout=60 * 10)  
         return Response(cached_data, status=status.HTTP_200_OK)
 
 class UpdatePostView(APIView):
@@ -404,8 +425,8 @@ class UpdatePostView(APIView):
                     post.feedback_at = None
                     
                     # Reset approval/rejection flags for fresh workflow
-                    post.is_client_approved = False
-                    post.is_moderator_rejected = False
+                    post.is_client_approved = None
+                    post.is_moderator_validated = None
                     post.client_approved_at = None
                     post.client_rejected_at = None
                     post.moderator_validated_at = None
@@ -437,10 +458,11 @@ class UpdatePostView(APIView):
                         )
                 
                 updated_data = PostSerializer(post, context={'request': request}).data
-                cache.set(f"post:{post_id}", updated_data, timeout=60*60)
-                cache.set(f"post_detail:{post_id}", updated_data, timeout=60*60)
-                cache.delete(f"user_posts:{request.user.id}")
-                cache.delete(f"user_drafts:{request.user.id}")
+                # TEMPORARY: Skip caching posts until cache issues are resolved
+                # cache.set(f"post:{post_id}", updated_data, timeout=60*60)
+                # cache.set(f"post_detail:{post_id}", updated_data, timeout=60*60)
+                # cache.delete(f"user_posts:{request.user.id}")
+                # cache.delete(f"user_drafts:{request.user.id}")
                 invalidate_cache(Post)
 
                 return Response(updated_data, status=status.HTTP_200_OK)
@@ -482,31 +504,25 @@ class FetchCMClientPostsView(APIView):
     def get(self, request):
         user = request.user
         cache_key = f"cm_posts:{user.id}"
-        cached_data = cache.get(cache_key)
+        # TEMPORARY: Override caching for posts until cache issues are resolved
+        cached_data = None  # cache.get(cache_key)
         
         if cached_data is None:
+            # Get all clients assigned to this Community Manager
             assigned_clients = User.objects.filter(
                 is_client=True,
                 assigned_communitymanagerstoclient=user
             )
             
-            creator_ids = [user.id]
-            if user.assigned_moderator:
-                creator_ids.append(user.assigned_moderator.id)
-                creator_ids.extend(
-                    user.assigned_moderator.assigned_communitymanagers
-                    .exclude(id=user.id)
-                    .values_list('id', flat=True)
-                )
-            
+            # Get all posts for assigned clients (regardless of creator)
             posts = Post.objects.filter(
-                client__in=assigned_clients,
-                creator_id__in=creator_ids
+                client__in=assigned_clients
             ).select_related('client', 'creator').prefetch_related('media')
             
             serializer = PostSerializer(posts, many=True, context={'request': request})
             cached_data = serializer.data
-            cache.set(cache_key, cached_data, timeout=60*10)  # 10 minutes
+            # TEMPORARY: Skip caching posts until cache issues are resolved
+            # cache.set(cache_key, cached_data, timeout=60*10)  # 10 minutes
         
         return Response(cached_data, status=status.HTTP_200_OK)
 
@@ -536,27 +552,64 @@ class FetchDraftsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        # Check for bypass_cache parameter
-        bypass_cache = request.query_params.get('bypassCache', 'false').lower() == 'true'
+        # TEMPORARY: Override caching for posts until cache issues are resolved  
+        # Check for bypass_cache parameter (always bypass for now)
+        bypass_cache = True  # request.query_params.get('bypassCache', 'false').lower() == 'true'
         
         # Cache key for user drafts
         cache_key = f"user_drafts:{request.user.id}"
         cached_data = None if bypass_cache else cache.get(cache_key)
 
         if cached_data is None:
-            # Fetch drafts where the creator is the logged-in user
-            drafts = Post.objects.filter(
-                creator=request.user,
-                status='draft'
-            ).distinct()
+            # Build filter conditions using Q objects
+            from django.db.models import Q
+            
+            # Admin and Super Admin can see all drafts
+            if request.user.is_administrator or request.user.is_superadministrator:
+                filter_conditions = Q(status='draft')
+            
+            # Clients cannot see drafts - they should only see approved/published content
+            elif request.user.is_client:
+                filter_conditions = Q(pk__in=[])  # Return empty queryset for clients
+            
+            else:
+                # Start with drafts created by the current user
+                filter_conditions = Q(creator=request.user, status='draft')
+                
+                # If user is a Community Manager, also include drafts from assigned moderators
+                # but only for posts that belong to clients also assigned to this CM
+                if request.user.is_community_manager:
+                    # Get moderators assigned to this CM
+                    assigned_moderators = request.user.moderators.all()
+                    # Get clients assigned to this CM
+                    assigned_clients = request.user.clients.all()
+                    
+                    if assigned_moderators.exists() and assigned_clients.exists():
+                        # Only include drafts created by assigned moderators for assigned clients
+                        filter_conditions |= Q(
+                            creator__in=assigned_moderators, 
+                            client__in=assigned_clients,
+                            status='draft'
+                        )
+                
+                # If user is a Moderator, also include drafts from assigned community managers
+                elif request.user.is_moderator:
+                    # Get community managers assigned to this moderator
+                    assigned_cms = request.user.assigned_communitymanagers.all()
+                    if assigned_cms.exists():
+                        filter_conditions |= Q(creator__in=assigned_cms, status='draft')
+            
+            # Apply the filter and order by creation date
+            drafts = Post.objects.filter(filter_conditions).distinct().order_by('-created_at')
 
             # Serialize the drafts
             serializer = PostSerializer(drafts, many=True, context={'request': request})
             cached_data = serializer.data
 
+            # TEMPORARY: Skip caching drafts until cache issues are resolved
             # Cache the serialized drafts for 5 minutes
-            cache.set(cache_key, cached_data, 300)
-            cache.set(cache_key, cached_data, timeout=60 * 5)
+            # cache.set(cache_key, cached_data, 300)
+            # cache.set(cache_key, cached_data, timeout=60 * 5)
 
         return Response(cached_data, status=status.HTTP_200_OK)
 
@@ -703,8 +756,8 @@ class ApprovePostView(APIView):
                 type="post_approved"
             )
         
-        # Notify moderator if client approved the post
-        if request.user == post.client and post.creator and post.creator.is_moderator:
+        # Notify moderator if client approved the post (avoid double notification if creator is the assigned moderator)
+        if request.user == post.client and post.creator and post.creator.is_moderator and post.creator != post.client.assigned_moderator:
             approval_message = f"The post '{post.title}' has been approved by the client and is now scheduled."
             if feedback:
                 approval_message += f" Client feedback: {feedback}"
@@ -713,6 +766,18 @@ class ApprovePostView(APIView):
                 title="Client Approved Post",
                 message=approval_message,
                 type="post_approved"
+            )
+        
+        # Notify assigned moderator when client approves the post (only if different from creator)
+        if request.user == post.client and post.client.assigned_moderator and post.client.assigned_moderator != post.creator:
+            moderator_message = f"Post '{post.title}' approved by client. Waiting for your validation."
+            if feedback:
+                moderator_message += f" Client feedback: {feedback}"
+            notify_user(
+                user=post.client.assigned_moderator,
+                title="Client Approved Post - Validation Needed",
+                message=moderator_message,
+                type="post_pending_validation"
             )
         
         response_data = {
@@ -811,11 +876,20 @@ class RejectPostView(APIView):
                 type="post_rejected"
             )
         
-        # Notify moderator if client rejected the post
-        if request.user == post.client and post.creator and post.creator.is_moderator:
+        # Notify moderator if client rejected the post (avoid double notification if creator is the assigned moderator)
+        if request.user == post.client and post.creator and post.creator.is_moderator and post.creator != post.client.assigned_moderator:
             notify_user(
                 title=f"Post '{post.title}' Rejected",
                 user=post.creator,
+                message=f"The post '{post.title}' has been rejected by the client. Feedback: {feedback}",
+                type="post_rejected"
+            )
+        
+        # Notify assigned moderator when client rejects the post (only if different from creator)
+        if request.user == post.client and post.client.assigned_moderator and post.client.assigned_moderator != post.creator:
+            notify_user(
+                title=f"Post '{post.title}' Rejected by Client",
+                user=post.client.assigned_moderator,
                 message=f"The post '{post.title}' has been rejected by the client. Feedback: {feedback}",
                 type="post_rejected"
             )
@@ -840,7 +914,8 @@ class FetchPendingPostsView(APIView):
         - CMs see pending posts for their assigned clients
         """
         cache_key = f"pending_posts:{request.user.id}"
-        cached_data = cache.get(cache_key)
+        # TEMPORARY: Override caching for posts until cache issues are resolved
+        cached_data = None  # cache.get(cache_key)
 
         if cached_data is None:
             if request.user.is_client:
@@ -874,8 +949,9 @@ class FetchPendingPostsView(APIView):
             serializer = PostSerializer(pending_posts, many=True, context={'request': request})
             cached_data = serializer.data
 
+            # TEMPORARY: Skip caching pending posts until cache issues are resolved
             # Cache the serialized data for 5 minutes
-            cache.set(cache_key, cached_data, timeout=60 * 5)
+            # cache.set(cache_key, cached_data, timeout=60 * 5)
 
         return Response(cached_data, status=status.HTTP_200_OK)
 
@@ -939,8 +1015,17 @@ class GetPostByIdView(APIView):
             # 2. User is a moderator or administrator
             # 3. User is the creator (community manager who created the post)
             # 4. User is a CM assigned to the client of this post
+            # 5. User is a CM and the post creator is their assigned moderator
             cm_assigned_to_client = (
                 request.user.is_community_manager and 
+                post.client and 
+                post.client.assigned_communitymanagerstoclient.filter(id=request.user.id).exists()
+            )
+            
+            cm_can_see_mod_post = (
+                request.user.is_community_manager and 
+                post.creator and 
+                post.creator == request.user.assigned_moderator and
                 post.client and 
                 post.client.assigned_communitymanagerstoclient.filter(id=request.user.id).exists()
             )
@@ -949,7 +1034,8 @@ class GetPostByIdView(APIView):
                     request.user.is_moderator or 
                     request.user.is_administrator or
                     post.creator == request.user or
-                    cm_assigned_to_client):
+                    cm_assigned_to_client or
+                    cm_can_see_mod_post):
                 return Response(
                     {"error": "You don't have permission to view this post"}, 
                     status=status.HTTP_403_FORBIDDEN
@@ -1074,8 +1160,8 @@ class ResubmitPostView(APIView):
         post.feedback_at = None
         
         # Reset approval/rejection flags for fresh workflow
-        post.is_client_approved = False
-        post.is_moderator_rejected = False
+        post.is_client_approved = None
+        post.is_moderator_validated = None
         post.client_approved_at = None
         post.client_rejected_at = None
         post.moderator_validated_at = None
@@ -1105,8 +1191,8 @@ class ResubmitPostView(APIView):
                 fail_silently=False
             )
         
-        # Notify moderators about resubmission
-        if post.client and post.client.assigned_moderator:
+        # Notify moderators about resubmission (avoid double notification if creator is the assigned moderator)
+        if post.client and post.client.assigned_moderator and post.client.assigned_moderator != post.creator:
             notify_user(
                 user=post.client.assigned_moderator,
                 title="Post Resubmitted",
@@ -1215,7 +1301,7 @@ class ModeratorValidatePostView(APIView):
             )
         
         # Check permissions - only moderators and admins can validate
-        if not (request.user.is_moderator or request.user.is_administrator):
+        if not (request.user.is_moderator or request.user.is_administrator or request.user.is_superadministrator):
             return Response(
                 {"error": "You are not authorized to validate this post."}, 
                 status=status.HTTP_403_FORBIDDEN
@@ -1274,6 +1360,18 @@ class ModeratorValidatePostView(APIView):
                 user=post.client,
                 title="Post Validated",
                 message=validation_message,
+                type="post_validated"
+            )
+        
+        # Notify assigned moderator when admin validates the post (avoid notifying if they are the creator)
+        if (request.user.is_administrator or request.user.is_superadministrator) and post.client and post.client.assigned_moderator and post.client.assigned_moderator != request.user and post.client.assigned_moderator != post.creator:
+            admin_validation_message = f"Post '{post.title}' validated by admin and scheduled."
+            if feedback:
+                admin_validation_message += f" Admin feedback: {feedback}"
+            notify_user(
+                user=post.client.assigned_moderator,
+                title="Post Validated by Admin",
+                message=admin_validation_message,
                 type="post_validated"
             )
         

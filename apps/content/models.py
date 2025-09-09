@@ -106,12 +106,14 @@ class Post(models.Model):
         help_text="When the post was actually published"
     )
     is_client_approved = models.BooleanField(
-        default=False,
+        null=True,
+        blank=True,
         help_text="Whether the client has approved this post (independent of status)"
     )
-    is_moderator_rejected = models.BooleanField(
-        default=False,
-        help_text="Whether the moderator has rejected this post"
+    is_moderator_validated = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="Whether the moderator has validated this post"
     )
 
     def __str__(self):
@@ -135,6 +137,9 @@ class Post(models.Model):
         if user in self.creator.assigned_communitymanagers.all():
             return True
         if user == self.creator.assigned_moderator:
+            return True
+        # Allow moderators to edit posts created by their assigned community managers
+        if user.is_moderator and self.creator in user.assigned_communitymanagers.all():
             return True
         return False
     
@@ -170,7 +175,7 @@ class Post(models.Model):
         """
         self.moderator_validated_at = timezone.now()
         self.moderator_rejected_at = None
-        self.is_moderator_rejected = False
+        self.is_moderator_validated = True
         if validated_by_user:
             self.last_edited_by = validated_by_user
     
@@ -180,7 +185,7 @@ class Post(models.Model):
         """
         self.moderator_rejected_at = timezone.now()
         self.moderator_validated_at = None
-        self.is_moderator_rejected = True
+        self.is_moderator_validated = False
         if rejected_by_user:
             self.last_edited_by = rejected_by_user
     
@@ -200,8 +205,8 @@ class Post(models.Model):
         self.client_rejected_at = None
         self.moderator_validated_at = None
         self.moderator_rejected_at = None
-        self.is_client_approved = False
-        self.is_moderator_rejected = False
+        self.is_client_approved = None
+        self.is_moderator_validated = None
         self.status = 'pending'
         if resubmitted_by_user:
             self.last_edited_by = resubmitted_by_user

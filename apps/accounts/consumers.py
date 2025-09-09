@@ -101,8 +101,11 @@ class UserDataConsumer(AsyncWebsocketConsumer):
         
         # Only authenticated users can connect
         if self.user.is_anonymous:
-            await self.close()
+            print(f"UserDataConsumer: Rejecting anonymous user connection from {self.scope.get('client', ['unknown'])[0]}")
+            await self.close(code=1008)  # Policy Violation - authentication required
             return
+        
+        print(f"UserDataConsumer: Accepting connection for user {self.user.id} ({self.user.email})")
         
         # Create group for all user data updates
         self.group_name = "user_data_updates"

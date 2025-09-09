@@ -60,12 +60,12 @@ class PostSerializer(serializers.ModelSerializer):
             'creator', 'media', 'media_files', 'platforms', 'hashtags', 'client',
             'last_edited_by', 'feedback', 'feedback_by', 'feedback_at',
             'client_approved_at', 'client_rejected_at', 'moderator_validated_at', 
-            'moderator_rejected_at', 'published_at', 'is_client_approved', 'is_moderator_rejected'
+            'moderator_rejected_at', 'published_at', 'is_client_approved', 'is_moderator_validated'
         ]
         read_only_fields = [
             'id', 'creator','client', 'media','last_edited_by', 'feedback_by', 'feedback_at',
             'client_approved_at', 'client_rejected_at', 'moderator_validated_at', 
-            'moderator_rejected_at', 'published_at', 'is_client_approved', 'is_moderator_rejected'
+            'moderator_rejected_at', 'published_at', 'is_client_approved', 'is_moderator_validated'
         ]
 
     def create(self, validated_data):

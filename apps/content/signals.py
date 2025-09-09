@@ -19,8 +19,18 @@ def send_post_websocket_update(action, post_data=None, post_id=None, old_status=
         print("Error: Channel layer not available")
         return
     
+    # Determine the correct WebSocket message type based on action
+    if action == "created":
+        message_type = 'post_created'
+    elif action == "deleted":
+        message_type = 'post_deleted'
+    elif action == "status_changed":
+        message_type = 'post_status_changed'
+    else:
+        message_type = 'post_updated'
+    
     message = {
-        'type': 'post_updated',
+        'type': message_type,
         'action': action,
         'post_id': post_id,
         'user_id': user_id,
@@ -48,6 +58,31 @@ def handle_post_saved(sender, instance, created, **kwargs):
     Handle post creation and updates
     """
     try:
+        # Clear cache when post is created or updated
+        from django.core.cache import cache
+        from django_redis import get_redis_connection
+        
+        try:
+            redis_conn = get_redis_connection("default")
+            # Clear user-specific caches for all users since the post affects multiple users
+            patterns = [
+                "user_posts:*",
+                "cm_posts:*", 
+                "pending_posts:*",
+                "scheduled_posts_*",
+                "draft_posts_*",
+            ]
+            
+            for pattern in patterns:
+                keys = redis_conn.keys(pattern)
+                if keys:
+                    redis_conn.delete(*keys)
+                    
+            print(f"Cache cleared for post {instance.id} ({'created' if created else 'updated'})")
+        except Exception as cache_error:
+            print(f"Cache invalidation error: {cache_error}")
+            cache.clear()  # Fallback
+        
         # Get the post data
         post_data = PostSerializer(instance).data
         
