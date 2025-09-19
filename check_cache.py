@@ -7,7 +7,6 @@ Usage: python check_cache.py [user_id]
 import os
 import sys
 import django
-from django.conf import settings
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -17,11 +16,9 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'planit.settings')
 django.setup()
 
 from django.core.cache import cache
-from django.contrib.auth import get_user_model
+from apps.accounts.models import User
+from apps.content.models import Post
 from apps.accounts.services import get_cached_user_data, clear_user_cache
-import json
-
-User = get_user_model()
 
 def check_django_cache(user_id=None):
     """Check Django cache for user data"""
@@ -78,8 +75,116 @@ def check_django_cache(user_id=None):
         
         print()
 
-def check_redis_cache(user_id=None):
-    """Check Redis cache for user data"""
+def check_post_cache(user_id=None, post_id=None):
+    """Check Django cache for post data"""
+    print("=" * 60)
+    print("POST CACHE INSPECTION")
+    print("=" * 60)
+    
+    if post_id:
+        try:
+            posts = [Post.objects.get(id=post_id)]
+            print(f"Checking cache for post ID: {post_id}")
+        except Post.DoesNotExist:
+            print(f"❌ Post with ID {post_id} not found")
+            return
+    elif user_id:
+        posts = Post.objects.filter(creator_id=user_id)[:10]
+        print(f"Checking cache for posts created by user ID: {user_id} (first 10)")
+    else:
+        posts = Post.objects.all()[:10]
+        print("Checking cache for all posts (first 10)...")
+    
+    print()
+    
+    # Post-specific cache keys
+    post_cache_keys = [
+        'post',
+        'post_detail',
+        'model_post',
+    ]
+    
+    # User-related post cache keys
+    user_cache_keys = [
+        'user_posts',
+        'user_drafts',
+        'cm_posts',
+        'pending_posts'
+    ]
+    
+    total_cached_posts = 0
+    
+    for post in posts:
+        print(f"Post: {post.title[:50]}{'...' if len(post.title) > 50 else ''} (ID: {post.id})")
+        print(f"Status: {post.status} | Creator: {post.creator.email if post.creator else 'N/A'}")
+        print(f"Client: {post.client.email if post.client else 'N/A'}")
+        print("-" * 40)
+        
+        has_cache = False
+        for key_type in post_cache_keys:
+            cache_key = f"{key_type}:{post.id}"
+            cached_data = cache.get(cache_key)
+            
+            if cached_data is not None:
+                has_cache = True
+                total_cached_posts += 1
+                print(f"✓ {key_type}: CACHED")
+                if isinstance(cached_data, dict):
+                    print(f"  - Title: {cached_data.get('title', 'N/A')[:50]}")
+                    print(f"  - Status: {cached_data.get('status', 'N/A')}")
+                    print(f"  - Creator: {cached_data.get('creator', {}).get('email', 'N/A') if cached_data.get('creator') else 'N/A'}")
+                elif isinstance(cached_data, str):
+                    print(f"  - Data: {cached_data[:100]}...")
+                else:
+                    print(f"  - Type: {type(cached_data).__name__}")
+            else:
+                print(f"✗ {key_type}: NOT CACHED")
+        
+        if not has_cache:
+            print("⚠️  No cache data found for this post")
+        
+        print()
+    
+    # Check user-related post caches
+    print("USER-RELATED POST CACHES:")
+    print("-" * 40)
+    
+    if user_id:
+        users_to_check = [User.objects.get(id=user_id)]
+    else:
+        # Check a few users
+        users_to_check = User.objects.filter(
+            id__in=posts.values_list('creator_id', flat=True).distinct()
+        )[:5]
+    
+    for user in users_to_check:
+        print(f"User: {user.email} (ID: {user.id})")
+        user_has_cache = False
+        
+        for key_type in user_cache_keys:
+            cache_key = f"{key_type}:{user.id}"
+            cached_data = cache.get(cache_key)
+            
+            if cached_data is not None:
+                user_has_cache = True
+                print(f"✓ {key_type}: CACHED")
+                if isinstance(cached_data, list):
+                    print(f"  - Count: {len(cached_data)} posts")
+                    if cached_data:
+                        print(f"  - Latest: {cached_data[0].get('title', 'N/A')[:30] if cached_data[0] else 'N/A'}...")
+                else:
+                    print(f"  - Type: {type(cached_data).__name__}")
+            else:
+                print(f"✗ {key_type}: NOT CACHED")
+        
+        if not user_has_cache:
+            print("⚠️  No user post cache data found")
+        print()
+    
+    print(f"Summary: {total_cached_posts} individual posts found in cache")
+
+def check_redis_cache(user_id=None, check_posts=False):
+    """Check Redis cache for user data and optionally post data"""
     try:
         from django_redis import get_redis_connection
         redis_conn = get_redis_connection("default")
@@ -88,21 +193,41 @@ def check_redis_cache(user_id=None):
         print("REDIS CACHE INSPECTION")
         print("=" * 60)
         
+        patterns = []
+        
         if user_id:
-            patterns = [
+            patterns.extend([
                 f"*:user:{user_id}:*",
                 f"*:user_data:{user_id}*",
                 f"*:views.decorators.cache.cache_page.*user*{user_id}*"
-            ]
+            ])
+            if check_posts:
+                patterns.extend([
+                    f"*:user_posts:{user_id}*",
+                    f"*:user_drafts:{user_id}*",
+                    f"*:cm_posts:{user_id}*",
+                    f"*:pending_posts:{user_id}*"
+                ])
             print(f"Checking Redis cache for user ID: {user_id}")
         else:
-            patterns = [
+            patterns.extend([
                 "*:user:*",
                 "*:user_data:*",
                 "*:views.decorators.cache.cache_page.*user*",
                 "*:current-user*"
-            ]
-            print("Checking Redis cache for user-related keys...")
+            ])
+            if check_posts:
+                patterns.extend([
+                    "*:post:*",
+                    "*:post_detail:*",
+                    "*:model_post:*",
+                    "*:user_posts:*",
+                    "*:user_drafts:*",
+                    "*:cm_posts:*",
+                    "*:pending_posts:*"
+                ])
+            cache_type = "user and post" if check_posts else "user"
+            print(f"Checking Redis cache for {cache_type}-related keys...")
         
         print()
         
@@ -222,8 +347,10 @@ def clear_all_user_cache():
 def main():
     import argparse
     
-    parser = argparse.ArgumentParser(description='Check cached user data')
+    parser = argparse.ArgumentParser(description='Check cached user and post data')
     parser.add_argument('--user-id', '-u', type=int, help='Specific user ID to check')
+    parser.add_argument('--post-id', '-p', type=int, help='Specific post ID to check')
+    parser.add_argument('--posts', action='store_true', help='Check post cache')
     parser.add_argument('--test', '-t', action='store_true', help='Run cache operations test')
     parser.add_argument('--clear-all', '-c', action='store_true', help='Clear all user cache')
     parser.add_argument('--redis-only', '-r', action='store_true', help='Check Redis cache only')
@@ -242,12 +369,20 @@ def main():
         test_cache_operations(args.user_id)
         return
     
-    # Default: check both caches
+    # Check post cache if requested
+    if args.posts:
+        if not args.redis_only:
+            check_post_cache(args.user_id, args.post_id)
+        if not args.django_only:
+            check_redis_cache(args.user_id, check_posts=True)
+        return
+    
+    # Default: check user caches only
     if not args.redis_only:
         check_django_cache(args.user_id)
     
     if not args.django_only:
-        check_redis_cache(args.user_id)
+        check_redis_cache(args.user_id, check_posts=False)
 
 if __name__ == '__main__':
     main()

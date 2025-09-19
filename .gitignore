@@ -29,3 +29,7 @@ media/media
 media/accounts
 .commands/
 celerybeat-schedule
+celerybeat-schedule.dir
+celerybeat-schedule.bak
+celerybeat-schedule.dat
+

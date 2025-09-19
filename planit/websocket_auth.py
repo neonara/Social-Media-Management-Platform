@@ -8,27 +8,39 @@ class TokenAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
         # Import inside the method to avoid AppRegistryNotReady error
         from django.contrib.auth.models import AnonymousUser
-        from django.contrib.auth import get_user_model
-        
-        User = get_user_model()
+        from apps.accounts.models import User
         scope['user'] = AnonymousUser()
         
         # Get the token from query string
         query_string = scope.get('query_string', b'').decode()
+        client_info = scope.get('client', ['unknown', 0])
+        client_ip = client_info[0] if client_info else 'unknown'
         
         if query_string:
             try:
                 query_params = dict(urllib.parse.parse_qsl(query_string))
                 token = query_params.get('token', '')  # <-- FIXED
-                print("TOKEN:", (token != None))
+                print(f"WebSocket auth attempt from {client_ip}: Token present: {bool(token)}")
                 if token:
                     access_token = AccessToken(token)
                     user_id = access_token.payload.get('user_id')
                     if user_id:
                         user = await self.get_user(user_id, User)
-                        scope['user'] = user
-            except (InvalidToken, TokenError, ValueError, UnicodeDecodeError):
-                pass
+                        if user and not user.is_anonymous:
+                            scope['user'] = user
+                            print(f"WebSocket auth success: User {user_id} ({user.email}) authenticated")
+                        else:
+                            print(f"WebSocket auth failed: User {user_id} not found")
+                    else:
+                        print("WebSocket auth failed: No user_id in token payload")
+                else:
+                    print(f"WebSocket auth failed from {client_ip}: No token in query params")
+            except (InvalidToken, TokenError) as e:
+                print(f"WebSocket auth failed from {client_ip}: Invalid token - {e}")
+            except (ValueError, UnicodeDecodeError) as e:
+                print(f"WebSocket auth failed from {client_ip}: Query string parsing error - {e}")
+        else:
+            print(f"WebSocket connection from {client_ip}: No query string provided")
 
         
         return await super().__call__(scope, receive, send)

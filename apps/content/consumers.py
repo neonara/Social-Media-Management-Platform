@@ -61,11 +61,14 @@ class PostTableConsumer(AsyncWebsocketConsumer):
 
     async def post_updated(self, event):
         """Handle post update events sent from other parts of the app"""
+        print(f"Consumer received post_updated event: {event}")
         await self.send(text_data=json.dumps({
             'type': 'post_updated',
-            'data': event['data'],
+            'data': event.get('data'),
             'action': event.get('action', 'update'),
             'post_id': event.get('post_id'),
+            'old_status': event.get('old_status'),
+            'new_status': event.get('new_status'),
             'user_id': event.get('user_id', 'system')
         }))
 
