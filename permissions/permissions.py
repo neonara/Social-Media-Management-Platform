@@ -61,7 +61,8 @@ class IsModeratorOrCMOrAdmin(permissions.BasePermission):
         return request.user.is_authenticated and (
             request.user.is_moderator or 
             request.user.is_community_manager or 
-            request.user.is_administrator
+            request.user.is_administrator or
+            request.user.is_superadministrator
         )
 
 class IsAssignedToPostOrAdmin(permissions.BasePermission):

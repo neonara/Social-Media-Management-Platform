@@ -8,7 +8,7 @@ on:
     branches: [master]
 
 jobs:
-  build-and-push:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -33,6 +33,35 @@ jobs:
         run: |
           python manage.py test
 
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Build Docker image
+      - name: Build backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: |
+            achrefmaarfi0/planit_backend_docker:latest
+            achrefmaarfi0/planit_backend_docker:${{ github.sha }}
+
+  push:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
       # Docker login
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -52,12 +81,12 @@ jobs:
             achrefmaarfi0/planit_backend_docker:${{ github.sha }}
 
   deploy:
-    # This job depends on the build-and-push job finishing successfully
-    needs: build-and-push
+    # This job depends on the push job finishing successfully
+    needs: push
     runs-on: ubuntu-latest
 
-    # IMPORTANT: Only run this step on a push to the master branch, NOT on pull requests.
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    # IMPORTANT: Run this step on push or pull request events.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
 
     steps:
       - name: Deploy to VPS
