@@ -1,0 +1,138 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrahead %}
+{{ block.super }}
+<style>
+    .stats-bar {
+        background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 15px;
+        margin: 15px 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+    }
+
+    .stats-item {
+        text-align: center;
+        padding: 10px;
+        background: white;
+        border-radius: 6px;
+        border: 1px solid #e9ecef;
+    }
+
+    .stats-item h4 {
+        margin: 0 0 5px 0;
+        color: #495057;
+        font-size: 0.9em;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+
+    .stats-item .number {
+        font-size: 1.8em;
+        font-weight: bold;
+        color: #79aec8;
+        margin: 5px 0;
+    }
+
+    .stats-item .label {
+        font-size: 0.8em;
+        color: #6c757d;
+    }
+
+    .stats-item.success .number {
+        color: #28a745;
+    }
+
+    .stats-item.warning .number {
+        color: #ffc107;
+    }
+
+    .stats-item.danger .number {
+        color: #dc3545;
+    }
+
+    .stats-item.info .number {
+        color: #17a2b8;
+    }
+
+    .dashboard-link {
+        float: right;
+        margin: 10px 0;
+    }
+
+    .dashboard-link a {
+        background: #79aec8;
+        color: white;
+        padding: 8px 16px;
+        text-decoration: none;
+        border-radius: 4px;
+        font-weight: bold;
+    }
+
+    .dashboard-link a:hover {
+        background: #6a9bc1;
+    }
+</style>
+{% endblock %}
+
+{% block content_title %}
+{{ block.super }}
+<div class="dashboard-link">
+    <a href="{% url 'admin:content_stats' %}">📊 View Full Dashboard</a>
+</div>
+{% endblock %}
+
+{% block result_list %}
+<!-- Statistics Bar -->
+<div class="stats-bar">
+    <div class="stats-item info">
+        <h4>Total Posts</h4>
+        <div class="number">{{ total_posts }}</div>
+        <div class="label">All time</div>
+    </div>
+
+    <div class="stats-item success">
+        <h4>Recent Activity</h4>
+        <div class="number">{{ recent_posts }}</div>
+        <div class="label">Last 7 days</div>
+    </div>
+
+    {% if posts_needing_attention > 0 %}
+    <div class="stats-item danger">
+        <h4>Need Attention</h4>
+        <div class="number">{{ posts_needing_attention }}</div>
+        <div class="label">Pending > 3 days</div>
+    </div>
+    {% endif %}
+
+    {% if avg_approval_time %}
+    <div
+        class="stats-item {% if avg_approval_time <= 1 %}success{% elif avg_approval_time <= 3 %}warning{% else %}danger{% endif %}">
+        <h4>Avg Approval</h4>
+        <div class="number">{{ avg_approval_time }}</div>
+        <div class="label">Days</div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Status Distribution -->
+{% if status_counts %}
+<div class="stats-bar">
+    {% for status, count in status_counts.items %}
+    {% if count > 0 %}
+    <div class="stats-item">
+        <h4>{{ status }}</h4>
+        <div class="number">{{ count }}</div>
+        <div class="label">Posts</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+</div>
+{% endif %}
+
+{{ block.super }}
+{% endblock %}

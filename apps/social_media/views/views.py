@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import NotFound, PermissionDenied
 from apps.social_media.models import SocialPage
 from apps.accounts.models import User
-from permissions.permissions import IsModeratorOrCM, IsClient
+from permissions.permissions import IsModeratorOrCM, IsClient, IsModeratorOrCMOrAdmin
 
 from apps.social_media.serializers import SocialPageSerializer
 
@@ -32,9 +32,9 @@ class SocialPagesView(APIView):
         
 class ClientSocialPagesView(APIView):
     """
-    Get all social media pages connected to a specific client (for moderators and community managers)
+    Get all social media pages connected to a specific client (for moderators, community managers, and super admins)
     """
-    permission_classes = [IsAuthenticated, IsModeratorOrCM]
+    permission_classes = [IsAuthenticated, IsModeratorOrCMOrAdmin]
     
     def get(self, request, client_id):
         # client_id is now received directly from URL path parameter

@@ -1,0 +1,282 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block title %}Content Statistics Dashboard{% endblock %}
+
+{% block extrahead %}
+<style>
+	.stats-grid {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+		gap: 20px;
+		margin: 20px 0;
+	}
+
+	.stats-card {
+		background: #fff;
+		border: 1px solid #ddd;
+		border-radius: 8px;
+		padding: 20px;
+		box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+	}
+
+	.stats-card h3 {
+		margin: 0 0 15px 0;
+		color: #333;
+		border-bottom: 2px solid #79aec8;
+		padding-bottom: 8px;
+	}
+
+	.stat-item {
+		display: flex;
+		justify-content: space-between;
+		margin: 10px 0;
+		padding: 8px 0;
+		border-bottom: 1px solid #eee;
+	}
+
+	.stat-item:last-child {
+		border-bottom: none;
+	}
+
+	.stat-value {
+		font-weight: bold;
+		color: #79aec8;
+	}
+
+	.stat-value.success {
+		color: #28a745;
+	}
+
+	.stat-value.warning {
+		color: #ffc107;
+	}
+
+	.stat-value.danger {
+		color: #dc3545;
+	}
+
+	.stat-value.info {
+		color: #17a2b8;
+	}
+
+	.performance-indicator {
+		display: inline-block;
+		padding: 4px 8px;
+		border-radius: 4px;
+		font-size: 0.9em;
+		font-weight: bold;
+	}
+
+	.performance-indicator.good {
+		background-color: #d4edda;
+		color: #155724;
+	}
+
+	.performance-indicator.warning {
+		background-color: #fff3cd;
+		color: #856404;
+	}
+
+	.performance-indicator.poor {
+		background-color: #f8d7da;
+		color: #721c24;
+	}
+
+	.recent-activity {
+		max-height: 400px;
+		overflow-y: auto;
+	}
+
+	.recent-post {
+		padding: 10px;
+		border-left: 3px solid #79aec8;
+		margin: 10px 0;
+		background: #f8f9fa;
+	}
+
+	.breadcrumbs {
+		background: #79aec8;
+		padding: 10px 20px;
+		margin: 0;
+	}
+
+	.breadcrumbs a {
+		color: white;
+		text-decoration: none;
+	}
+
+	.dashboard-header {
+		background: linear-gradient(135deg, #79aec8 0%, #4a90a4 100%);
+		color: white;
+		padding: 30px 20px;
+		margin: -20px -20px 20px -20px;
+		border-radius: 8px;
+	}
+
+	.dashboard-header h1 {
+		margin: 0;
+		font-size: 2.5em;
+	}
+
+	.dashboard-header p {
+		margin: 10px 0 0 0;
+		opacity: 0.9;
+	}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+	<h1>📊 Content Management Dashboard</h1>
+	<p>Real-time analytics and insights for your content workflow</p>
+</div>
+
+<div class="stats-grid">
+	<!-- Overview Card -->
+	<div class="stats-card">
+		<h3>📈 Overview</h3>
+		<div class="stat-item">
+			<span>Total Posts</span>
+			<span class="stat-value info">{{ total_posts }}</span>
+		</div>
+		<div class="stat-item">
+			<span>Posts Last 7 Days</span>
+			<span class="stat-value success">{{ posts_last_7_days }}</span>
+		</div>
+		<div class="stat-item">
+			<span>Posts Last 30 Days</span>
+			<span class="stat-value">{{ posts_last_30_days }}</span>
+		</div>
+		{% if avg_workflow_time %}
+		<div class="stat-item">
+			<span>Avg. Workflow Time</span>
+			<span class="stat-value">{{ avg_workflow_time|floatformat:1 }} hours</span>
+		</div>
+		{% endif %}
+	</div>
+
+	<!-- Status Distribution -->
+	<div class="stats-card">
+		<h3>📋 Status Distribution</h3>
+		{% for status in status_stats %}
+		<div class="stat-item">
+			<span>{{ status.status|title }}</span>
+			<span class="stat-value">{{ status.count }}</span>
+		</div>
+		{% endfor %}
+	</div>
+
+	<!-- Workflow Performance -->
+	<div class="stats-card">
+		<h3>⚡ Workflow Performance</h3>
+		<div class="stat-item">
+			<span>Client Approval Rate</span>
+			<span
+				class="stat-value {% if client_approval_rate >= 80 %}success{% elif client_approval_rate >= 60 %}warning{% else %}danger{% endif %}">
+				{{ client_approval_rate }}%
+			</span>
+		</div>
+		<div class="stat-item">
+			<span>Moderator Validation Rate</span>
+			<span
+				class="stat-value {% if moderator_validation_rate >= 80 %}success{% elif moderator_validation_rate >= 60 %}warning{% else %}danger{% endif %}">
+				{{ moderator_validation_rate }}%
+			</span>
+		</div>
+		<div class="stat-item">
+			<span>Rejection Rate</span>
+			<span
+				class="stat-value {% if rejection_rate <= 20 %}success{% elif rejection_rate <= 40 %}warning{% else %}danger{% endif %}">
+				{{ rejection_rate }}%
+			</span>
+		</div>
+		<div class="stat-item">
+			<span>Posts Needing Attention</span>
+			<span
+				class="stat-value {% if posts_needing_attention == 0 %}success{% elif posts_needing_attention <= 5 %}warning{% else %}danger{% endif %}">
+				{{ posts_needing_attention }}
+			</span>
+		</div>
+		{% if overdue_posts %}
+		<div class="stat-item">
+			<span>⚠️ Overdue Posts</span>
+			<span class="stat-value danger">{{ overdue_posts }}</span>
+		</div>
+		{% endif %}
+	</div>
+
+	<!-- Media Statistics -->
+	<div class="stats-card">
+		<h3>🎨 Media Statistics</h3>
+		<div class="stat-item">
+			<span>Total Media Files</span>
+			<span class="stat-value">{{ total_media }}</span>
+		</div>
+		{% for media_type in media_by_type %}
+		<div class="stat-item">
+			<span>{{ media_type.type|title }} Files</span>
+			<span class="stat-value">{{ media_type.count }}</span>
+		</div>
+		{% endfor %}
+		<div class="stat-item">
+			<span>Unused Media Files</span>
+			<span
+				class="stat-value {% if unused_media == 0 %}success{% elif unused_media <= 10 %}warning{% else %}danger{% endif %}">
+				{{ unused_media }}
+			</span>
+		</div>
+	</div>
+
+	<!-- Top Creators -->
+	<div class="stats-card">
+		<h3>👥 Top Content Creators</h3>
+		{% for creator in top_creators %}
+		<div class="stat-item">
+			<span>{{ creator.creator__first_name }} {{ creator.creator__last_name }} ({{ creator.creator__email }})</span>
+			<span class="stat-value">{{ creator.post_count }}</span>
+		</div>
+		{% endfor %}
+	</div>
+
+	<!-- Top Clients -->
+	<div class="stats-card">
+		<h3>🏢 Top Clients</h3>
+		{% for client in top_clients %}
+		<div class="stat-item">
+			<span>{{ client.client__first_name }} {{ client.client__last_name }} ({{ client.client__email }})</span>
+			<span class="stat-value">{{ client.post_count }}</span>
+		</div>
+		{% endfor %}
+	</div>
+</div>
+
+<!-- Recent Activity -->
+<div class="stats-card" style="margin-top: 20px;">
+	<h3>🕒 Recent Activity</h3>
+	<div class="recent-activity">
+		{% for post in recent_posts %}
+		<div class="recent-post">
+			<strong>{{ post.title }}</strong><br>
+			<small>
+				By {{ post.creator.email }} for {{ post.client.email }} |
+				Status: <span class="stat-value">{{ post.get_status_display }}</span> |
+				{{ post.updated_at|timesince }} ago
+			</small>
+		</div>
+		{% endfor %}
+	</div>
+</div>
+
+<!-- Quick Actions -->
+<div class="stats-card" style="margin-top: 20px;">
+	<h3>⚡ Quick Actions</h3>
+	<p>
+		<a href="{% url 'admin:content_post_changelist' %}" class="button">View All Posts</a>
+		<a href="{% url 'admin:content_post_changelist' %}?status=pending" class="button">Pending Posts</a>
+		<a href="{% url 'admin:content_post_changelist' %}?status=rejected" class="button">Rejected Posts</a>
+		<a href="{% url 'admin:content_media_changelist' %}" class="button">Manage Media</a>
+	</p>
+</div>
+
+{% endblock %}
