@@ -100,11 +100,11 @@ jobs:
             cd /planit
 
             # Pull the newest images from Docker Hub that were just pushed
-            docker compose -f docker-compose.prod.yml pull
+            docker compose pull
 
             # Stop and restart all services with the new images
             # The .env.prod file in this directory provides the environment variables
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker compose up -d --remove-orphans
 
             # Clean up old, unused Docker images to save space
             docker image prune -af
