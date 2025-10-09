@@ -2,13 +2,13 @@
 name: CI/CD Pipeline for Django
 
 on:
-  push:
-    branches: [master]
   pull_request:
+    types: [closed]
     branches: [master]
 
 jobs:
   test:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
 
     steps:
@@ -34,6 +34,7 @@ jobs:
           python manage.py test
 
   build:
+    if: github.event.pull_request.merged == true
     needs: test
     runs-on: ubuntu-latest
 
@@ -54,6 +55,7 @@ jobs:
             achrefmaarfi0/planit_backend_docker:${{ github.sha }}
 
   push:
+    if: github.event.pull_request.merged == true
     needs: build
     runs-on: ubuntu-latest
 
@@ -81,12 +83,9 @@ jobs:
             achrefmaarfi0/planit_backend_docker:${{ github.sha }}
 
   deploy:
-    # This job depends on the push job finishing successfully
+    if: github.event.pull_request.merged == true
     needs: push
     runs-on: ubuntu-latest
-
-    # IMPORTANT: Run this step on push or pull request events.
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
 
     steps:
       - name: Deploy to VPS
