@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     # 'apps.ai_integration',   
     'apps.social_media',    
     'apps.collaboration',
+    'drf_spectacular',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -194,8 +195,38 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'apps.accounts.authentication.JWTCookieAuthentication',  # Cookie-based JWT auth (primary)
         'apps.accounts.authentication.JWTHeaderAuthentication',  # Header-based JWT auth (secondary)
-        # 'rest_framework.authentication.SessionAuthentication',  # Disabled for security
+        'rest_framework.authentication.SessionAuthentication' if DEBUG else '',  # Session auth only in dev
     ),
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+        'rest_framework.renderers.BrowsableAPIRenderer',  # Enable browsable API
+    ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Spectacular settings for API documentation
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'PlanIt API',
+    'DESCRIPTION': 'API documentation for PlanIt Social Media Management Platform',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SCHEMA_PATH_PREFIX': '/api/',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SWAGGER_UI_SETTINGS': {
+        'deepLinking': True,
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+        'displayOperationId': False,
+        'defaultModelsExpandDepth': 1,
+        'defaultModelExpandDepth': 1,
+        'tryItOutEnabled': True,
+    },
+    'AUTHENTICATION_WHITELIST': [
+        'apps.accounts.authentication.JWTCookieAuthentication',
+        'apps.accounts.authentication.JWTHeaderAuthentication',
+    ],
+    'SERVE_PERMISSIONS': ['rest_framework.permissions.AllowAny'],
+    'SERVE_AUTHENTICATION': [],
 }
 
 SIMPLE_JWT = {
@@ -262,9 +293,11 @@ STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')  
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media') 
 
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),  # Optional: for custom static dirs
-]
+# Only include static directory if it exists
+STATICFILES_DIRS = []
+static_dir = os.path.join(BASE_DIR, 'static')
+if os.path.exists(static_dir):
+    STATICFILES_DIRS.append(static_dir)
 
 # For WhiteNoise compression (optional but recommended)
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
