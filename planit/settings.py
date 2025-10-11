@@ -190,13 +190,22 @@ DATABASES = {
     }
 }
 
+# Build authentication classes list dynamically
+DEFAULT_AUTHENTICATION_CLASSES = [
+    'apps.accounts.authentication.JWTCookieAuthentication',  # Cookie-based JWT auth (primary)
+    'apps.accounts.authentication.JWTHeaderAuthentication',  # Header-based JWT auth (secondary)
+]
+
+# Add SessionAuthentication only in DEBUG mode
+if DEBUG:
+    DEFAULT_AUTHENTICATION_CLASSES.append('rest_framework.authentication.SessionAuthentication')
+
 REST_FRAMEWORK = {
     'NON_FIELD_ERRORS_KEY': 'error',
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'apps.accounts.authentication.JWTCookieAuthentication',  # Cookie-based JWT auth (primary)
-        'apps.accounts.authentication.JWTHeaderAuthentication',  # Header-based JWT auth (secondary)
-        'rest_framework.authentication.SessionAuthentication' if DEBUG else '',  # Session auth only in dev
-    ),
+    'DEFAULT_AUTHENTICATION_CLASSES': DEFAULT_AUTHENTICATION_CLASSES,
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',  # Default to requiring auth
+    ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
         'rest_framework.renderers.BrowsableAPIRenderer',  # Enable browsable API
