@@ -1,5 +1,6 @@
 from rest_framework.response import Response
-from rest_framework.generics import UpdateAPIView, ListAPIView, DestroyAPIView
+from rest_framework.generics import ListAPIView, DestroyAPIView
+from rest_framework.views import APIView
 from .models import Notification
 from .serializers import NotificationSerializer
 from rest_framework.permissions import IsAuthenticated
@@ -71,14 +72,13 @@ class UserNotificationsView(ListAPIView):
         
         return queryset
     
-class MarkNotificationAsReadView(UpdateAPIView):
+class MarkNotificationAsReadView(APIView):
     permission_classes = [IsAuthenticated]
-    queryset = Notification.objects.all()
 
-    def update(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         notification_id = kwargs.get('pk')
         try:
-            notification = self.queryset.get(id=notification_id, recipient=request.user)
+            notification = Notification.objects.get(id=notification_id, recipient=request.user)
             notification.is_read = True
             notification.save()
             
@@ -97,11 +97,16 @@ class MarkNotificationAsReadView(UpdateAPIView):
         """Update the cached unread notification count"""
         unread_count = Notification.objects.filter(recipient_id=user_id, is_read=False).count()
         cache.set(f"user_unread_count:{user_id}", unread_count, NOTIFICATION_CACHE_TIMEOUT)
+    
+    def _update_unread_count_cache(self, user_id):
+        """Update the cached unread notification count"""
+        unread_count = Notification.objects.filter(recipient_id=user_id, is_read=False).count()
+        cache.set(f"user_unread_count:{user_id}", unread_count, NOTIFICATION_CACHE_TIMEOUT)
 
-class MarkAllAsReadView(UpdateAPIView):
+class MarkAllAsReadView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def update(self, request, *args, **kwargs):
+    def post(self, request, *args, **kwargs):
         count = Notification.objects.filter(recipient=request.user, is_read=False).update(is_read=True)
         
         # Invalidate user notifications cache

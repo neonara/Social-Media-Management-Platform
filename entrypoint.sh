@@ -29,8 +29,31 @@ if [ ! -f "/app/manage.py" ]; then
     exit 1
 fi
 
+# Create static directories if they don't exist
+echo "Creating static directories..."
+mkdir -p /app/static
+mkdir -p /app/staticfiles
+mkdir -p /app/media
+
 echo "Running database migrations..."
 python manage.py migrate
+
+echo "Collecting static files..."
+python manage.py collectstatic --noinput
+
+# Create default superuser if necessary (optional)
+echo "Creating superuser (if necessary)..."
+python manage.py shell << END
+from django.contrib.auth import get_user_model
+User = get_user_model()
+if not User.objects.filter(email='admin@planit.com').exists():
+    user = User.objects.create_superuser('admin@planit.com', 'admin123')
+    user.is_superadministrator = True
+    user.save()
+    print('Superuser created: admin@planit.com / admin123')
+else:
+    print('Superuser already exists')
+END
 
 echo "Starting Django application..."
 exec "$@"
