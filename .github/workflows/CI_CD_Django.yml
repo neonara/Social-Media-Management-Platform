@@ -2,13 +2,40 @@
 name: CI/CD Pipeline for Django
 
 on:
-  push:
-    branches: [master]
   pull_request:
+    types: [closed]
     branches: [master]
 
 jobs:
+  test:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.11.9"
+
+      # Install dependencies
+      - name: Install Django dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Run Django tests
+      - name: Run Django tests
+        run: |
+          python manage.py test
+
   build:
+    if: github.event.pull_request.merged == true
+    needs: test
     runs-on: ubuntu-latest
 
     steps:
@@ -28,6 +55,7 @@ jobs:
             achrefmaarfi0/planit_backend_docker:${{ github.sha }}
 
   push:
+    if: github.event.pull_request.merged == true
     needs: build
     runs-on: ubuntu-latest
 
@@ -55,12 +83,9 @@ jobs:
             achrefmaarfi0/planit_backend_docker:${{ github.sha }}
 
   deploy:
-    # This job depends on the push job finishing successfully
+    if: github.event.pull_request.merged == true
     needs: push
     runs-on: ubuntu-latest
-
-    # IMPORTANT: Run this step on push to master OR pull request targeting master.
-    if: (github.ref == 'refs/heads/master' && github.event_name == 'push') || (github.base_ref == 'master' && github.event_name == 'pull_request')
 
     steps:
       - name: Deploy to VPS
@@ -74,11 +99,11 @@ jobs:
             cd /planit
 
             # Pull the newest images from Docker Hub that were just pushed
-            docker compose -f docker-compose.prod.yml pull
+            docker compose pull
 
             # Stop and restart all services with the new images
             # The .env.prod file in this directory provides the environment variables
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            docker compose up -d --remove-orphans
 
             # Clean up old, unused Docker images to save space
             docker image prune -af
