@@ -9,6 +9,9 @@ from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.security.websocket import AllowedHostsOriginValidator
 from planit.websocket_auth import TokenAuthMiddlewareStack
+from django.conf import settings
+from django.urls import re_path
+from django.views.static import serve
 
 # Import routing configurations from all apps
 import apps.notifications.routing
