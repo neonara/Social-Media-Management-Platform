@@ -862,7 +862,7 @@ class RemoveModeratorFromClientView(APIView):
         except User.DoesNotExist:
             return Response({"error": "Client not found."}, status=status.HTTP_404_NOT_FOUND)
 
-class RemoveClientCommunityManagersView(generics.UpdateAPIView):
+class RemoveCommunityManagersView(generics.UpdateAPIView):
     serializer_class = RemoveCMsFromClientSerializer
     permission_classes = [IsModeratorOrAdmin]  # Allow both moderators and admins to manage client relationships
     lookup_url_kwarg = 'client_id'
@@ -1388,3 +1388,15 @@ class ValidateRoleView(APIView):
                 {"error": "Role validation failed"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class ChatUsersView(APIView):
+    permission_classes = [IsAuthenticated]  # Allow any authenticated user
+
+    def get(self, request):
+        # Get all active users except the current user
+        users = User.objects.filter(is_active=True).exclude(id=request.user.id)
+        
+        # Serialize the users
+        serializer = GetUserSerializer(users, many=True)
+        
+        return Response(serializer.data, status=status.HTTP_200_OK)

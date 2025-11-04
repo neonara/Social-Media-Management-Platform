@@ -97,6 +97,10 @@ CSRF_COOKIE_HTTPONLY = False  # Must be False to allow access via JavaScript
 CORS_ALLOW_ALL_ORIGINS = False  # Restrict to specific origins in production
 CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,
+    "http://localhost:3000",  # Next.js dev server
+    "http://localhost:5173",  # Vite dev server (if used)
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
 ]
 CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be sent with requests
 

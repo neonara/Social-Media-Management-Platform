@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import ValidateTokenView, ValidateRoleView, ClientFetchModeratorAndCMsView, AssignedModeratorsAndClientsView, AssignedClientsView, AssignCommunityManagerToModeratorView ,CurrentUserView,FetchEmails, AssignModeratorToClientView, RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView, ClientAssignedCommunityManagersView, EligibleCMsForClient, RemoveClientCommunityManagersView, AssignedModeratorClientsView, AssignCMToClientView, CreateCMView, AssignedModeratorCommunityManagersView  
+from .views import ValidateTokenView, ValidateRoleView, ClientFetchModeratorAndCMsView, AssignedModeratorsAndClientsView, AssignedClientsView, AssignCommunityManagerToModeratorView ,CurrentUserView,FetchEmails, AssignModeratorToClientView, RemoveModeratorFromClientView,RemoveCommunityManagerFromModeratorView, ListUsers, PasswordResetRequestView, UserLoginView, UpdateUserView, CreateUserView, FirstTimePasswordChangeView, LogoutUserView, AdminDeleteUserView, PasswordResetConfirmView, GetUserByIdView, ClientAssignedCommunityManagersView, EligibleCMsForClient, RemoveCommunityManagersView, AssignedModeratorClientsView, AssignCMToClientView, CreateCMView, AssignedModeratorCommunityManagersView, ChatUsersView  
 
 urlpatterns = [
     # Authentication URLs
@@ -22,6 +22,7 @@ urlpatterns = [
     path('user/<int:user_id>/', GetUserByIdView.as_view(), name='user-detail'),
     path('users/fetchemail/', FetchEmails.as_view(), name='fetch-email'),
     path('users/', ListUsers.as_view(), name='user-list'),
+    path('users/chat/', ChatUsersView.as_view(), name='chat-users'),
     path('users/update/<int:user_id>/', UpdateUserView.as_view(), name='user-update'),
     path('users/delete/<int:user_id>/', AdminDeleteUserView.as_view(), name='user-delete'),
     
@@ -31,7 +32,7 @@ urlpatterns = [
     path('clients/<int:client_id>/assign-cm/', AssignCMToClientView.as_view(), name='assign-client-cms'),
     
     #remove assignments
-    path('clients/<int:client_id>/community-managers/remove/',RemoveClientCommunityManagersView.as_view(), name='assign-client-cms'),
+    path('clients/<int:client_id>/community-managers/remove/',RemoveCommunityManagersView.as_view(), name='assign-client-cms'),
     path('clients/<int:client_id>/moderator/remove/', RemoveModeratorFromClientView.as_view()),
     path('moderators/<int:moderator_id>/community-manager/<int:cm_id>/remove/', RemoveCommunityManagerFromModeratorView.as_view()), 
     
