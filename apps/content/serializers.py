@@ -93,6 +93,9 @@ class PostSerializer(serializers.ModelSerializer):
         media_files = validated_data.pop('media_files', [])
         hashtags = validated_data.pop('hashtags', [])
 
+        # Get existing media IDs from context (passed by view during edit)
+        existing_media_ids = self.context.get('existing_media', [])
+
         #ll hashtag
         if hashtags:
             hashtag_string = ' '.join([f"#{tag}" for tag in hashtags])  
@@ -106,6 +109,20 @@ class PostSerializer(serializers.ModelSerializer):
         instance.platforms = validated_data.get('platforms', instance.platforms)
         instance.save()
 
+        # Clear existing media and rebuild with only the media user wants to keep
+        instance.media.clear()
+        
+        # Add back existing media that user wants to keep
+        if existing_media_ids:
+            from .models import Media
+            for media_id in existing_media_ids:
+                try:
+                    media_instance = Media.objects.get(id=int(media_id))
+                    instance.media.add(media_instance)
+                except (Media.DoesNotExist, ValueError):
+                    pass  # Skip if media doesn't exist or ID is invalid
+
+        # Add new media files
         for file in media_files:
             media_instance = Media.objects.create(
                 file=file,

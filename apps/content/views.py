@@ -395,6 +395,7 @@ class UpdatePostView(APIView):
             # Rest of your update logic...
             data = request.data.copy()
             media_files = request.FILES.getlist('media_files', [])
+            existing_media_ids = request.data.getlist('existing_media', [])
 
             # Handle client update
             client_id = data.get('client')
@@ -410,7 +411,7 @@ class UpdatePostView(APIView):
                 post,
                 data=data,
                 partial=True,
-                context={'request': request}
+                context={'request': request, 'existing_media': existing_media_ids}
             )
 
             if serializer.is_valid():

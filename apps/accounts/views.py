@@ -404,16 +404,17 @@ class UserLoginView(APIView):
 
     def post(self, request):
         serializer = UserLoginSerializer(data=request.data, context={'request': request})
-        remember_me = request.data.get("remember_me", False)
-        
-        # Add remember_me to the context so the serializer can use it
-        serializer.context['remember_me'] = remember_me
         
         if serializer.is_valid():
-            # Cookie expiration settings
-            cookie_max_age = 30 * 24 * 60 * 60 if remember_me else None  # 30 days or session cookie
+            remember = serializer.validated_data.get("remember", False)
             
-            response = Response(serializer.validated_data, status=status.HTTP_200_OK)
+            # Cookie expiration settings based on remember_me
+            # If remember_me is True: 30 days, otherwise session expires when browser closes
+            cookie_max_age = 30 * 24 * 60 * 60 if remember else None
+            
+            # Prepare response data (exclude remember flag from response)
+            response_data = {k: v for k, v in serializer.validated_data.items() if k != 'remember'}
+            response = Response(response_data, status=status.HTTP_200_OK)
             
             # Set secure cookies with enhanced security
             response.set_cookie(
@@ -436,9 +437,10 @@ class UserLoginView(APIView):
             # Log successful authentication
             logger = logging.getLogger('security')
             logger.info(f'Successful login for user: {serializer.validated_data.get("email")} '
-                       f'from IP: {request.META.get("REMOTE_ADDR")}')
+                       f'from IP: {request.META.get("REMOTE_ADDR")} '
+                       f'(remember_me: {remember})')
             
-            return response  # Return the success response here
+            return response
             
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)   
     

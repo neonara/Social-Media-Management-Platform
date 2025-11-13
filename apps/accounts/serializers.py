@@ -14,6 +14,7 @@ from django.conf import settings
 class UserLoginSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(max_length=155, min_length=6)
     password = serializers.CharField(max_length=68, write_only=True)
+    remember = serializers.BooleanField(required=False, default=False, write_only=True)
     full_name = serializers.CharField(max_length=255, read_only=True)
     access_token = serializers.CharField(max_length=255, read_only=True)
     refresh_token = serializers.CharField(max_length=255, read_only=True)
@@ -21,7 +22,7 @@ class UserLoginSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'email', 'password', 'full_name', 
+            'email', 'password', 'remember', 'full_name', 
             'access_token', 'refresh_token', 
             'is_administrator', 'is_moderator', 
             'is_community_manager', 'is_client'
@@ -30,6 +31,7 @@ class UserLoginSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         email = attrs.get('email')
         password = attrs.get('password')
+        remember = attrs.get('remember', False)
         request = self.context.get('request')
 
         user = authenticate(request, email=email, password=password)
@@ -43,7 +45,18 @@ class UserLoginSerializer(serializers.ModelSerializer):
         if not user.is_active:  
             raise AuthenticationFailed("Your account is inactive. Contact support.")
 
+        # Create tokens with extended lifetime if remember_me is True
         refresh = RefreshToken.for_user(user)
+        
+        # If remember_me is True, extend the token lifetime
+        if remember:
+            from datetime import timedelta as td
+            
+            # Set longer expiration times - 30 days for both when remember is enabled
+            refresh.set_exp(lifetime=td(days=30))  # Refresh token: 30 days
+            # Access token: 30 days (matching frontend cookie maxAge)
+            refresh.access_token.set_exp(lifetime=td(days=30))
+        
         tokens = {
             'access_token': str(refresh.access_token),
             'refresh_token': str(refresh),
@@ -59,6 +72,7 @@ class UserLoginSerializer(serializers.ModelSerializer):
             'is_moderator': user.is_moderator,
             'is_community_manager': user.is_community_manager,
             'is_client': user.is_client,
+            'remember': remember,  # Pass remember flag to view
         }
     
 class LogoutUserSerializer(serializers.Serializer):

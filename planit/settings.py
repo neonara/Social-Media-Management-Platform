@@ -28,6 +28,9 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(','
 REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
 REDIS_PORT = os.environ.get('REDIS_PORT', '6379')
 
+# Google Gemini API Configuration
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
@@ -47,7 +50,7 @@ INSTALLED_APPS = [
     # 'apps.planning',          
     # 'apps.analytics',        
     'apps.notifications',    
-    # 'apps.ai_integration',   
+    'apps.ai_integration',   
     'apps.social_media',    
     'apps.collaboration',
     'drf_spectacular',
@@ -243,7 +246,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=90),
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=12),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -469,4 +472,4 @@ X_FRAME_OPTIONS = 'DENY'
 JWT_COOKIE_SECURE = not DEBUG  # Use secure cookies in production
 JWT_COOKIE_HTTPONLY = True
 JWT_COOKIE_SAMESITE = 'Lax'
-JWT_COOKIE_MAX_AGE = 90 * 60  # 90 minutes (match ACCESS_TOKEN_LIFETIME)
+JWT_COOKIE_MAX_AGE = 12 * 60 * 60  # 12 hours (match ACCESS_TOKEN_LIFETIME)

@@ -16,7 +16,8 @@ urlpatterns = [
     path('api/content/', include('apps.content.urls')),  
     path('api/', include('apps.social_media.urls')),  
     path('api/', include('apps.notifications.urls')),
-    path('api/collaboration/', include('apps.collaboration.urls')),  
+    path('api/collaboration/', include('apps.collaboration.urls')),
+    path('api/ai/', include('apps.ai_integration.urls')),  # AI Integration endpoints
     path('api-auth/', include('rest_framework.urls')),  # DRF login/logout
     # API Documentation
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
