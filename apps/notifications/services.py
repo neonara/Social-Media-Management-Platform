@@ -7,8 +7,8 @@ from django.core.cache import cache
 # Cache timeout in seconds (1 hour)
 NOTIFICATION_CACHE_TIMEOUT = 3600
 
+
 def notify_user(user, title, message, url="", type="general"):
-    
     # Create notification record in database
     notification = Notification.objects.create(
         recipient=user,
@@ -17,13 +17,13 @@ def notify_user(user, title, message, url="", type="general"):
         type=type,
         url=url,
         created_at=timezone.now(),
-        is_read=False
+        is_read=False,
     )
 
     # Handle notification cache update
     cache_key = f"user_notifications:{user.id}"
     cached_notifications = cache.get(cache_key)
-    
+
     if cached_notifications is not None:
         # If notifications are cached, add the new one to the cache instead of invalidating
         try:
@@ -37,7 +37,7 @@ def notify_user(user, title, message, url="", type="general"):
             print(f"Failed to update cache, invalidated for user {user.id}")
     else:
         print(f"No cached notifications found for user {user.id}")
-    
+
     # Update unread count cache
     unread_count = Notification.objects.filter(recipient=user, is_read=False).count()
     cache.set(f"user_unread_count:{user.id}", unread_count, NOTIFICATION_CACHE_TIMEOUT)
@@ -51,28 +51,24 @@ def notify_user(user, title, message, url="", type="general"):
         "type": type,
         "url": url,
         "is_read": False,
-        "created_at": notification.created_at.isoformat()
+        "created_at": notification.created_at.isoformat(),
     }
 
     # Send through WebSocket if the user is connected
     channel_layer = get_channel_layer()
     async_to_sync(channel_layer.group_send)(
-        f"user_{user.id}",
-        {
-            "type": "send_notification",
-            "content": notification_data
-        }
+        f"user_{user.id}", {"type": "send_notification", "content": notification_data}
     )
-    
+
     return notification
 
+
 def mark_notification_read(notification_id, user=None):
-    
     try:
         query = Notification.objects.filter(id=notification_id)
         if user is not None:
             query = query.filter(recipient=user)
-            
+
         notification = query.first()
         if notification:
             notification.is_read = True
@@ -83,35 +79,40 @@ def mark_notification_read(notification_id, user=None):
         print(f"Error marking notification as read: {str(e)}")
         return False
 
+
 def mark_all_read(user):
-    
     try:
-        count = Notification.objects.filter(recipient=user, is_read=False).update(is_read=True)
+        count = Notification.objects.filter(recipient=user, is_read=False).update(
+            is_read=True
+        )
         return count
     except Exception as e:
         print(f"Error marking all notifications as read: {str(e)}")
         return 0
 
+
 def get_unread_count(user):
-    
     return Notification.objects.filter(recipient=user, is_read=False).count()
 
-def get_recent_notifications(user, limit=20):
 
-    return Notification.objects.filter(recipient=user).order_by('-created_at')[:limit]
+def get_recent_notifications(user, limit=20):
+    return Notification.objects.filter(recipient=user).order_by("-created_at")[:limit]
+
 
 def get_unread_notification_count(user_id):
     """Get the number of unread notifications for a user"""
-    
+
     # Try to get count from cache
     cache_key = f"user_unread_count:{user_id}"
     cached_count = cache.get(cache_key)
-    
+
     if cached_count is not None:
         return cached_count
-    
+
     # If not in cache, get from database and cache it
-    unread_count = Notification.objects.filter(recipient_id=user_id, is_read=False).count()
+    unread_count = Notification.objects.filter(
+        recipient_id=user_id, is_read=False
+    ).count()
     cache.set(cache_key, unread_count, NOTIFICATION_CACHE_TIMEOUT)
-    
+
     return unread_count

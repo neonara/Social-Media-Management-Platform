@@ -8,8 +8,8 @@ import sys
 import django
 
 # Setup Django
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'planit.settings')
-sys.path.insert(0, '/home/achref/Desktop/planit/backend')
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "planit.settings")
+sys.path.insert(0, "/home/achref/Desktop/planit/backend")
 django.setup()
 
 from apps.ai_integration.services.gemini_service import GeminiService
@@ -30,9 +30,7 @@ print("2️⃣  Testing hashtag suggestion...")
 caption = "Just finished my morning workout! Feeling energized 💪"
 try:
     result = service.analyze_caption_for_hashtags(
-        caption=caption,
-        platform='instagram',
-        count=5
+        caption=caption, platform="instagram", count=5
     )
     print(f"   Caption: {caption}")
     print(f"   ✅ Hashtags suggested: {result['hashtags']}")
@@ -59,8 +57,7 @@ print("4️⃣  Testing caption improvement...")
 test_caption = "Check out my new post"
 try:
     improve_result = service.generate_caption_improvement(
-        caption=test_caption,
-        platform='instagram'
+        caption=test_caption, platform="instagram"
     )
     print(f"   Original: {test_caption}")
     print(f"   ✅ Improved: {improve_result['improved_caption']}")
@@ -74,7 +71,7 @@ print("5️⃣  Testing campaign theme detection...")
 captions = [
     "Just finished my workout!",
     "New gym equipment arrived",
-    "Training tips for beginners"
+    "Training tips for beginners",
 ]
 try:
     theme_result = service.detect_campaign_theme(captions)
