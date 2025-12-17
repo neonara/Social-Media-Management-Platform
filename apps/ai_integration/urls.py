@@ -47,8 +47,7 @@ urlpatterns = [
         views.EngagementForecastDetailView.as_view(),
         name="engagement_forecast_detail",
     ),
-    # Get current model metrics and performance
-    path("model-metrics/", views.ModelMetricsView.as_view(), name="model_metrics"),
+    
     # Get optimal posting times for a platform
     path(
         "optimal-posting-times/",

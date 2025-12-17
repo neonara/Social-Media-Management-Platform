@@ -10,7 +10,7 @@ from .serializers import (
     EngagementPredictionResponseSerializer,
     ModelMetricsSerializer,
 )
-from .services.ml_service import EngagementForecastModel
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -501,45 +501,6 @@ class EngagementForecastDetailView(APIView):
                 {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
-class ModelMetricsView(APIView):
-    """
-    Get current model metrics and performance.
-
-    GET /api/ai/model-metrics/
-    """
-
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        try:
-            # Get active model
-            active_model = ModelMetrics.objects.filter(is_active=True).first()
-
-            if not active_model:
-                return Response(
-                    {"error": "No active model found"}, status=status.HTTP_404_NOT_FOUND
-                )
-
-            serializer = ModelMetricsSerializer(active_model)
-
-            # Add feature importance if available
-            try:
-                model = EngagementForecastModel(model_type=active_model.model_type)
-                feature_importance = model.get_feature_importance()
-                response_data = serializer.data
-                response_data["feature_importance"] = dict(
-                    list(feature_importance.items())[:5]
-                )
-                return Response(response_data, status=status.HTTP_200_OK)
-            except:
-                return Response(serializer.data, status=status.HTTP_200_OK)
-
-        except Exception as e:
-            logger.error(f"Error retrieving model metrics: {str(e)}")
-            return Response(
-                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
 
 
 @api_view(["POST"])
