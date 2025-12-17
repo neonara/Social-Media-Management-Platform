@@ -1,3 +1,4 @@
+import logging
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 from channels.layers import get_channel_layer
@@ -6,6 +7,7 @@ import json
 from .models import Post
 from .serializers import PostSerializer
 
+logger = logging.getLogger(__name__)
 
 # Get channel layer for WebSocket communication
 channel_layer = get_channel_layer()
@@ -18,7 +20,7 @@ def send_post_websocket_update(
     Send WebSocket update to all clients in the post_table_updates group
     """
     if not channel_layer:
-        print("Error: Channel layer not available")
+        logger.warning("Error: Channel layer not available")
         return
 
     # Determine the correct WebSocket message type based on action
@@ -45,7 +47,7 @@ def send_post_websocket_update(
         message["old_status"] = old_status
         message["new_status"] = new_status
 
-    print(f"Sending WebSocket message: {message}")
+    logger.debug(f"Sending WebSocket message: {message}")
 
     # Send message to the WebSocket group
     async_to_sync(channel_layer.group_send)("post_table_updates", message)
@@ -77,11 +79,11 @@ def handle_post_saved(sender, instance, created, **kwargs):
                 if keys:
                     redis_conn.delete(*keys)
 
-            print(
+            logger.debug(
                 f"Cache cleared for post {instance.id} ({'created' if created else 'updated'})"
             )
         except Exception as cache_error:
-            print(f"Cache invalidation error: {cache_error}")
+            logger.error(f"Cache invalidation error: {cache_error}")
             cache.clear()  # Fallback
 
         # Get the post data
@@ -119,7 +121,7 @@ def handle_post_saved(sender, instance, created, **kwargs):
                 )
     except Exception as e:
         # Log error but don't break the save operation
-        print(f"Error sending WebSocket update for post {instance.id}: {e}")
+        logger.error(f"Error sending WebSocket update for post {instance.id}: {e}")
 
 
 @receiver(pre_save, sender=Post)
@@ -150,4 +152,4 @@ def handle_post_deleted(sender, instance, **kwargs):
         )
     except Exception as e:
         # Log error but don't break the delete operation
-        print(f"Error sending WebSocket update for deleted post {instance.id}: {e}")
+        logger.error(f"Error sending WebSocket update for deleted post {instance.id}: {e}")

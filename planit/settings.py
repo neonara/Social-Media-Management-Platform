@@ -470,6 +470,16 @@ LOGGING = {
             "level": "WARNING",
             "propagate": False,
         },
+        "apps.accounts": {
+            "handlers": ["console"],
+            "level": "WARNING",  # INFO messages won't show during tests
+            "propagate": False,
+        },
+        "apps.content": {
+            "handlers": ["console"],
+            "level": "WARNING",  # DEBUG messages won't show during tests
+            "propagate": False,
+        },
     },
 }
 
@@ -494,3 +504,8 @@ JWT_COOKIE_SECURE = not DEBUG  # Use secure cookies in production
 JWT_COOKIE_HTTPONLY = True
 JWT_COOKIE_SAMESITE = "Lax"
 JWT_COOKIE_MAX_AGE = 12 * 60 * 60  # 12 hours (match ACCESS_TOKEN_LIFETIME)
+
+# Test Configuration
+TEST_RUNNER = "django.test.runner.DiscoverRunner"
+TEST_DISCOVER_TOP_LEVEL = BASE_DIR
+TEST_DISCOVER_PATTERN = "test*.py"
