@@ -6,11 +6,15 @@ Handles caption analysis, hashtag generation, and mood extraction
 import json
 import logging
 import time
+import hashlib
 from django.conf import settings
 from typing import Dict, List, Optional
 from functools import wraps
 
 logger = logging.getLogger(__name__)
+
+# Cache to reduce API calls
+_request_cache = {}
 
 
 def convert_24h_to_12h(time_24h: str) -> str:
@@ -71,46 +75,66 @@ def clean_json_response(text: str) -> str:
     return text.strip()
 
 
-def retry_with_backoff(max_retries: int = 3, base_delay: float = 1.0):
+def cache_api_result(func):
     """
-    Decorator to retry API calls with exponential backoff for rate limiting
+    Decorator to cache API results and avoid duplicate requests
+    Uses function name + arguments as cache key
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Create cache key from function name and arguments
+        cache_key_parts = [func.__name__]
+        
+        # Add string arguments (skip 'self')
+        for arg in args[1:]:
+            if isinstance(arg, str):
+                cache_key_parts.append(arg)
+        
+        # Add keyword arguments
+        for k, v in sorted(kwargs.items()):
+            if isinstance(v, (str, int)):
+                cache_key_parts.append(f"{k}:{v}")
+        
+        cache_key = hashlib.md5("|".join(cache_key_parts).encode()).hexdigest()
+        
+        # Check cache first
+        if cache_key in _request_cache:
+            logger.info(f"Cache hit for {func.__name__}")
+            return _request_cache[cache_key]
+        
+        # Call the actual function
+        result = func(*args, **kwargs)
+        
+        # Store in cache
+        _request_cache[cache_key] = result
+        logger.info(f"Cached result for {func.__name__}")
+        
+        return result
+    
+    return wrapper
+
+
+def retry_with_backoff(max_retries: int = 1, base_delay: float = 1.0):
+    """
+    Decorator for API calls - makes single attempt to avoid rate limiting on free tier
+    
+    On free tier, retry attempts count as separate requests and trigger rate limits faster.
+    This decorator now makes only 1 request attempt.
 
     Args:
-        max_retries: Maximum number of retry attempts
-        base_delay: Base delay in seconds (multiplied by 2 each retry)
+        max_retries: Maximum number of retry attempts (default: 1 = no retries)
+        base_delay: Base delay in seconds (not used with single attempt)
     """
 
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            delay = base_delay
-            last_exception = None
-
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except Exception as e:
-                    error_str = str(e)
-                    last_exception = e
-
-                    # Check if it's a rate limit error
-                    is_rate_limit = (
-                        "429" in error_str
-                        or "RESOURCE_EXHAUSTED" in error_str
-                        or "Too Many Requests" in error_str
-                    )
-
-                    if is_rate_limit and attempt < max_retries - 1:
-                        logger.warning(
-                            f"Rate limited on attempt {attempt + 1}/{max_retries}. "
-                            f"Waiting {delay}s before retry. Error: {error_str}"
-                        )
-                        time.sleep(delay)
-                        delay *= 2  # Exponential backoff
-                    else:
-                        raise
-
-            raise last_exception
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                error_str = str(e)
+                logger.error(f"API Error in {func.__name__}: {error_str}")
+                raise
 
         return wrapper
 
@@ -130,9 +154,10 @@ class GeminiService:
 
         # Create client with API key (auto-reads GEMINI_API_KEY env var if key is None)
         self.client = genai.Client(api_key=api_key)
-        self.model = "gemini-2.0-flash-001"
+        self.model = "gemini-2.5-flash-lite"
 
-    @retry_with_backoff(max_retries=3, base_delay=1.0)
+    @cache_api_result
+    @retry_with_backoff(max_retries=1, base_delay=1.0)
     def analyze_caption_for_hashtags(
         self,
         caption: str,
@@ -161,7 +186,8 @@ class GeminiService:
         result = self._parse_hashtag_response(response.text)
         return result
 
-    @retry_with_backoff(max_retries=3, base_delay=1.0)
+    @cache_api_result
+    @retry_with_backoff(max_retries=1, base_delay=1.0)
     def extract_mood_and_tone(self, caption: str) -> Dict:
         """
         Extract mood and tone from caption
@@ -191,7 +217,8 @@ Respond with ONLY valid JSON, no markdown or extra text."""
         result = json.loads(text)
         return result
 
-    @retry_with_backoff(max_retries=3, base_delay=1.0)
+    @cache_api_result
+    @retry_with_backoff(max_retries=1, base_delay=1.0)
     def generate_caption_improvement(
         self, caption: str, platform: str = "instagram"
     ) -> Dict:
@@ -290,7 +317,8 @@ Respond with this exact JSON format:
                 "reasoning": "Failed to parse response",
             }
 
-    @retry_with_backoff(max_retries=3, base_delay=1.0)
+    @cache_api_result
+    @retry_with_backoff(max_retries=1, base_delay=1.0)
     def detect_campaign_theme(self, captions: List[str]) -> Dict:
         """
         Analyze multiple captions to detect overall campaign theme
@@ -326,7 +354,8 @@ ONLY JSON, no markdown."""
         result = json.loads(text)
         return result
 
-    @retry_with_backoff(max_retries=3, base_delay=1.0)
+    @cache_api_result
+    @retry_with_backoff(max_retries=1, base_delay=1.0)
     def generate_content_by_mood(
         self,
         topic: str,
@@ -385,7 +414,8 @@ No markdown, just JSON."""
             "count": len(result.get("captions", [])),
         }
 
-    @retry_with_backoff(max_retries=3, base_delay=1.0)
+    @cache_api_result
+    @retry_with_backoff(max_retries=1, base_delay=1.0)
     def predict_engagement(self, post_data: Dict) -> Dict:
         """
         Predict engagement for a post using Gemini AI
@@ -528,7 +558,8 @@ Return ONLY valid JSON (no markdown):
                 "error": str(e),
             }
 
-    @retry_with_backoff(max_retries=3, base_delay=1.0)
+    @cache_api_result
+    @retry_with_backoff(max_retries=1, base_delay=1.0)
     def rewrite_caption_by_mood(
         self, caption: str, mood: str, tone: str, platform: str = "instagram"
     ) -> Dict:
