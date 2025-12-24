@@ -10,7 +10,10 @@ jobs:
   test:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-
+    
+    env:
+      DJANGO_SUPPRESS_PROMPTS: true
+      
     steps:
       # Checkout code
       - name: Checkout code
@@ -39,7 +42,7 @@ jobs:
       # Run Django tests
       - name: Run Django tests
         run: |
-          python manage.py test
+          python manage.py test --noinput
 
   build:
     if: github.event.pull_request.merged == true
