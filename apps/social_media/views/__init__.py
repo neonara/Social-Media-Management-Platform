@@ -4,7 +4,7 @@ from apps.social_media.views.facebook import (
     FacebookCallbackView,
     FacebookDisconnectView,
     FacebookPageView,
-    PublishToFacebookView
+    PublishToFacebookView,
 )
 
 from apps.social_media.views.instagram import (
@@ -12,7 +12,7 @@ from apps.social_media.views.instagram import (
     InstagramCallbackView,
     InstagramDisconnectView,
     InstagramPageView,
-    PublishToInstagramView
+    PublishToInstagramView,
 )
 
 from apps.social_media.views.linkedin import (
@@ -20,27 +20,24 @@ from apps.social_media.views.linkedin import (
     LinkedInCallbackView,
     LinkedInDisconnectView,
     LinkedInPageView,
-    PublishToLinkedInView
+    PublishToLinkedInView,
 )
 
 # Expose all views
 __all__ = [
-    'FacebookConnectView',
-    'FacebookCallbackView',
-    'FacebookDisconnectView',
-    'FacebookPageView',
-    'PublishToFacebookView',
-
-    'InstagramConnectView',
-    'InstagramCallbackView',
-    'InstagramDisconnectView',
-    'InstagramPageView',
-    'PublishToInstagramView',
-
-    'LinkedInConnectView',
-    'LinkedInCallbackView',
-    'LinkedInDisconnectView',
-    'LinkedInPageView',
-    'PublishToLinkedInView',
-
+    "FacebookConnectView",
+    "FacebookCallbackView",
+    "FacebookDisconnectView",
+    "FacebookPageView",
+    "PublishToFacebookView",
+    "InstagramConnectView",
+    "InstagramCallbackView",
+    "InstagramDisconnectView",
+    "InstagramPageView",
+    "PublishToInstagramView",
+    "LinkedInConnectView",
+    "LinkedInCallbackView",
+    "LinkedInDisconnectView",
+    "LinkedInPageView",
+    "PublishToLinkedInView",
 ]

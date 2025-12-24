@@ -17,6 +17,7 @@ FB_APP_SECRET = settings.FACEBOOK_APP_SECRET
 IG_REDIRECT_URI = settings.INSTAGRAM_REDIRECT_URI
 IG_SCOPES = settings.INSTAGRAM_SCOPES
 
+
 # Instagram Connection Views
 class InstagramConnectView(APIView):
     permission_classes = [IsAuthenticated]
@@ -69,39 +70,52 @@ class InstagramCallbackView(APIView):
                     defaults={
                         "page_name": f"Instagram via {page['name']}",
                         "access_token": page["access_token"],
-                        "permissions": {"linked_facebook_page": page["id"]}
-                    }
+                        "permissions": {"linked_facebook_page": page["id"]},
+                    },
                 )
-                return Response({"success": True, "instagram_account_id": ig_account["id"]})
+                return Response(
+                    {"success": True, "instagram_account_id": ig_account["id"]}
+                )
 
-        return Response({"error": "No Instagram Business Account linked to your Facebook pages."}, status=404)
+        return Response(
+            {"error": "No Instagram Business Account linked to your Facebook pages."},
+            status=404,
+        )
 
 
 class InstagramDisconnectView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        deleted, _ = SocialPage.objects.filter(client=request.user, platform="instagram").delete()
+        deleted, _ = SocialPage.objects.filter(
+            client=request.user, platform="instagram"
+        ).delete()
         return Response({"disconnected": deleted > 0})
+
 
 class InstagramPageView(APIView):
     """
     Get Instagram page details for current user
     """
+
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         try:
-            page = SocialPage.objects.get(client=request.user, platform='instagram')
+            page = SocialPage.objects.get(client=request.user, platform="instagram")
             serializer = SocialPageSerializer(page)
             return Response(serializer.data)
         except SocialPage.DoesNotExist:
             # Return a 200 response with connected=False instead of 404
-            return Response({
-                'connected': False,
-                'platform': 'instagram',
-                'message': 'No Instagram page connected'
-            }, status=200)
+            return Response(
+                {
+                    "connected": False,
+                    "platform": "instagram",
+                    "message": "No Instagram page connected",
+                },
+                status=200,
+            )
+
 
 class PublishToInstagramView(APIView):
     permission_classes = [IsAuthenticated]
@@ -111,12 +125,21 @@ class PublishToInstagramView(APIView):
             post = Post.objects.get(id=post_id)
 
             if post.client != request.user and not request.user.is_staff:
-                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+                return Response(
+                    {"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN
+                )
 
-            page = post.platform_page or SocialPage.objects.filter(client=post.client, platform='instagram').first()
+            page = (
+                post.platform_page
+                or SocialPage.objects.filter(
+                    client=post.client, platform="instagram"
+                ).first()
+            )
 
             if not page or not page.is_token_valid():
-                return Response({"error": "Invalid or missing Instagram page token."}, status=400)
+                return Response(
+                    {"error": "Invalid or missing Instagram page token."}, status=400
+                )
 
             ig_post_id = publish_to_instagram(post, page)
 
@@ -124,7 +147,9 @@ class PublishToInstagramView(APIView):
             post.status = "published"
             post.save()
 
-            return Response({"success": True, "instagram_post_id": ig_post_id}, status=200)
+            return Response(
+                {"success": True, "instagram_post_id": ig_post_id}, status=200
+            )
 
         except Post.DoesNotExist:
             return Response({"error": "Post not found"}, status=404)

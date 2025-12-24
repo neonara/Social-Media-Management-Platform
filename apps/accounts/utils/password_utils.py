@@ -2,6 +2,7 @@ import string
 import random
 from typing import Optional
 
+
 def generate_password(length: int = 12) -> str:
     """
     Generate a strong password with at least one of each:
@@ -9,10 +10,10 @@ def generate_password(length: int = 12) -> str:
     - Lowercase letter
     - Number
     - Special character
-    
+
     Args:
         length (int): Length of password (minimum 12)
-    
+
     Returns:
         str: Generated password
     """
@@ -29,7 +30,7 @@ def generate_password(length: int = 12) -> str:
         random.choice(lowercase),
         random.choice(uppercase),
         random.choice(digits),
-        random.choice(symbols)
+        random.choice(symbols),
     ]
 
     # Fill the rest randomly
@@ -39,4 +40,4 @@ def generate_password(length: int = 12) -> str:
 
     # Shuffle the password
     random.shuffle(password)
-    return ''.join(password)
+    return "".join(password)

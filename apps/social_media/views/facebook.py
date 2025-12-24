@@ -7,10 +7,10 @@ from django.shortcuts import redirect
 from apps.social_media.models import SocialPage
 from apps.social_media.serializers import SocialPageSerializer
 from apps.social_media.services import (
-    exchange_code_for_access_token, 
-    extend_to_long_lived_token, 
+    exchange_code_for_access_token,
+    extend_to_long_lived_token,
     fetch_user_pages,
-    publish_to_facebook
+    publish_to_facebook,
 )
 from apps.content.models import Post
 from django.conf import settings
@@ -22,12 +22,13 @@ FB_APP_SECRET = settings.FACEBOOK_APP_SECRET
 FB_REDIRECT_URI = settings.FACEBOOK_REDIRECT_URI
 FB_SCOPES = settings.FACEBOOK_SCOPES
 
+
 # Facebook Connection Views
 class FacebookConnectView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        url = (  
+        url = (
             f"https://www.facebook.com/{GRAPH_API_VERSION}/dialog/oauth?"
             f"client_id={FB_APP_ID}&redirect_uri={FB_REDIRECT_URI}"
             f"&scope={FB_SCOPES}&response_type=code"
@@ -50,10 +51,7 @@ class FacebookCallbackView(APIView):
 
             # Step 2: Get user first and last name from Graph API
             user_info_url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/me"
-            params = {
-                "fields": "first_name,last_name",
-                "access_token": long_token
-            }
+            params = {"fields": "first_name,last_name", "access_token": long_token}
             user_info = requests.get(user_info_url, params=params).json()
 
             # Step 3: Update user's first and last name
@@ -76,8 +74,8 @@ class FacebookCallbackView(APIView):
                 defaults={
                     "page_name": page["name"],
                     "access_token": page["access_token"],
-                    "permissions": {"tasks": page.get("tasks", [])}
-                }
+                    "permissions": {"tasks": page.get("tasks", [])},
+                },
             )
 
             return Response({"success": True, "page": page}, status=200)
@@ -90,28 +88,34 @@ class FacebookDisconnectView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        deleted, _ = SocialPage.objects.filter(client=request.user, platform="facebook").delete()
+        deleted, _ = SocialPage.objects.filter(
+            client=request.user, platform="facebook"
+        ).delete()
         return Response({"disconnected": deleted > 0})
+
 
 class FacebookPageView(APIView):
     """
     Get Facebook page details for current user
     """
+
     permission_classes = [IsAuthenticated]
-    
+
     def get(self, request):
         try:
-            page = SocialPage.objects.get(client=request.user, platform='facebook')
+            page = SocialPage.objects.get(client=request.user, platform="facebook")
             serializer = SocialPageSerializer(page)
             return Response(serializer.data)
         except SocialPage.DoesNotExist:
             # Return a 200 response with connected=False instead of 404
-            return Response({
-                'connected': False,
-                'platform': 'facebook',
-                'message': 'No Facebook page connected'
-            }, status=200)
-
+            return Response(
+                {
+                    "connected": False,
+                    "platform": "facebook",
+                    "message": "No Facebook page connected",
+                },
+                status=200,
+            )
 
 
 class PublishToFacebookView(APIView):
@@ -122,12 +126,21 @@ class PublishToFacebookView(APIView):
             post = Post.objects.get(id=post_id)
 
             if post.client != request.user and not request.user.is_staff:
-                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+                return Response(
+                    {"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN
+                )
 
-            page = post.platform_page or SocialPage.objects.filter(user=post.client, platform='facebook').first()
+            page = (
+                post.platform_page
+                or SocialPage.objects.filter(
+                    user=post.client, platform="facebook"
+                ).first()
+            )
 
             if not page or not page.is_token_valid():
-                return Response({"error": "Invalid or missing Facebook page token."}, status=400)
+                return Response(
+                    {"error": "Invalid or missing Facebook page token."}, status=400
+                )
 
             fb_post_id = publish_to_facebook(post, page)
 
@@ -135,7 +148,9 @@ class PublishToFacebookView(APIView):
             post.status = "published"
             post.save()
 
-            return Response({"success": True, "facebook_post_id": fb_post_id}, status=200)
+            return Response(
+                {"success": True, "facebook_post_id": fb_post_id}, status=200
+            )
 
         except Post.DoesNotExist:
             return Response({"error": "Post not found"}, status=404)

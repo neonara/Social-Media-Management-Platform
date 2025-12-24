@@ -4,6 +4,7 @@ from django.core.cache import cache
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, password=None, **extra_fields):
         if not email:
@@ -23,13 +24,14 @@ class CustomUserManager(BaseUserManager):
             raise ValueError("Superuser must have is_superuser=True.")
         return self.create_user(email, password, **extra_fields)
 
+
 class User(AbstractUser):
     username = None  # Remove the username field
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=20, blank=True, null=True)
     first_name = models.CharField(max_length=25, blank=True, null=True)
     last_name = models.CharField(max_length=25, blank=True, null=True)
-    user_image = models.FileField(upload_to='accounts/images/', blank=True, null=True)
+    user_image = models.FileField(upload_to="accounts/images/", blank=True, null=True)
 
     is_verified = models.BooleanField(default=True)
     is_administrator = models.BooleanField(default=False)
@@ -37,38 +39,38 @@ class User(AbstractUser):
     is_community_manager = models.BooleanField(default=False)
     is_client = models.BooleanField(default=False)
     is_superadministrator = models.BooleanField(default=False)
- 
+
     assigned_moderator = models.ForeignKey(
-        'self',
+        "self",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        related_name='clients_assigned',
-        limit_choices_to={'is_moderator': True},
-        help_text="The Moderator assigned to this Client"
+        related_name="clients_assigned",
+        limit_choices_to={"is_moderator": True},
+        help_text="The Moderator assigned to this Client",
     )
 
     assigned_communitymanagers = models.ManyToManyField(
-        'self',
+        "self",
         blank=True,
-        related_name='moderators',
-        limit_choices_to={'is_community_manager': True},
+        related_name="moderators",
+        limit_choices_to={"is_community_manager": True},
         symmetrical=False,
-        help_text="The Community Managers assigned to this Moderator"
+        help_text="The Community Managers assigned to this Moderator",
     )
 
     assigned_communitymanagerstoclient = models.ManyToManyField(
-        'self',
+        "self",
         blank=True,
-        related_name='clients',
-        limit_choices_to={'is_community_manager': True},
+        related_name="clients",
+        limit_choices_to={"is_community_manager": True},
         symmetrical=False,
-        help_text="The Community Managers assigned to this Client"
+        help_text="The Community Managers assigned to this Client",
     )
-    
-    USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = ['first_name', 'last_name']
-    
+
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["first_name", "last_name"]
+
     objects = CustomUserManager()
 
     def __str__(self):
@@ -85,14 +87,14 @@ class User(AbstractUser):
         """
         cache_key = f"user_fullname:{self.id}"
         cached_name = cache.get(cache_key)
-        
+
         if cached_name is not None:
             return cached_name
-            
+
         full_name = f"{self.first_name} {self.last_name}".strip()
         cache.set(cache_key, full_name, 3600)  # Cache for 1 hour
         return full_name
-    
+
     def get_meta_data(self):
         """
         Return user's metadata including permissions and profile info.
@@ -100,46 +102,49 @@ class User(AbstractUser):
         """
         cache_key = f"user_meta:{self.id}"
         cached_data = cache.get(cache_key)
-        
+
         if cached_data is not None:
             return cached_data
-            
+
         meta_data = {
-            'id': self.id,
-            'username': self.username,
-            'email': self.email,
-            'first_name': self.first_name,
-            'last_name': self.last_name,
-            'is_staff': self.is_staff,
-            'is_active': self.is_active,
-            'is_superuser': self.is_superuser,
-            'is_administrator': self.is_administrator,
-            'is_moderator': self.is_moderator,
-            'is_community_manager': self.is_community_manager,
-            'is_client': self.is_client,
-            'is_supplier': self.is_supplier,
+            "id": self.id,
+            "username": self.username,
+            "email": self.email,
+            "first_name": self.first_name,
+            "last_name": self.last_name,
+            "is_staff": self.is_staff,
+            "is_active": self.is_active,
+            "is_superuser": self.is_superuser,
+            "is_administrator": self.is_administrator,
+            "is_moderator": self.is_moderator,
+            "is_community_manager": self.is_community_manager,
+            "is_client": self.is_client,
+            "is_supplier": self.is_supplier,
             # Add other relevant fields
         }
-        
+
         try:
             profile = self.profile
-            meta_data.update({
-                'profile_image': profile.image.url if profile.image else None,
-                'bio': profile.bio,
-                # Add other profile fields
-            })
+            meta_data.update(
+                {
+                    "profile_image": profile.image.url if profile.image else None,
+                    "bio": profile.bio,
+                    # Add other profile fields
+                }
+            )
         except:
             pass
-            
+
         cache.set(cache_key, meta_data, 3600)  # Cache for 1 hour
         return meta_data
-        
+
     def clear_cache(self):
         """Clear all cached data for this user"""
         cache.delete(f"user_meta:{self.id}")
         cache.delete(f"user_fullname:{self.id}")
         cache.delete(f"user_notifications:{self.id}")
         cache.delete(f"user_unread_count:{self.id}")
+
 
 @receiver(post_save, sender=User)
 def clear_user_cache(sender, instance, **kwargs):

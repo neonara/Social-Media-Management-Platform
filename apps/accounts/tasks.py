@@ -2,6 +2,7 @@ from celery import shared_task
 from django.core.mail import send_mail
 from planit import settings
 
+
 @shared_task
 def send_celery_email(subject, message, recipient_list, fail_silently=False):
     send_mail(
@@ -11,4 +12,3 @@ def send_celery_email(subject, message, recipient_list, fail_silently=False):
         recipient_list,
         fail_silently=fail_silently,
     )
-
